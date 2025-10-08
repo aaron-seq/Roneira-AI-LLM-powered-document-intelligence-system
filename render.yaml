@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: document-intelligence-api
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: document-intelligence-db
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+
+databases:
+  - name: document-intelligence-db
+    plan: free
