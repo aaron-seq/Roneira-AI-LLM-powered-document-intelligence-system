@@ -1,178 +1,267 @@
 """
-Enhanced document processing service with AI integration
+Enhanced document processing service with local LLM and document parsing
 """
 
-import asyncio
 import os
 import uuid
-from datetime import datetime
-from typing import Dict, Any, Callable, Optional
 import aiofiles
-from fastapi import UploadFile
+from typing import Dict, Any, Optional, Callable
+from datetime import datetime
 import logging
+import asyncio
 
-from backend.core.config import get_application_settings
-from backend.services.ai.azure_intelligence import AzureDocumentIntelligenceService
-from backend.services.ai.llm_enhancer import LLMEnhancementService
-from backend.core.exceptions import DocumentProcessingError
+# Document processing imports
+import PyPDF2
+from docx import Document as DocxDocument
+from PIL import Image
+import io
+
+from backend.core.config import get_settings
+from backend.services.local_llm_service import LocalLLMService
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentProcessorService:
-    """Enhanced document processing with AI capabilities"""
-    
+    """Enhanced document processing with local LLM"""
+
     def __init__(self):
-        self.settings = get_application_settings()
-        self.azure_service = AzureDocumentIntelligenceService()
-        self.llm_service = LLMEnhancementService()
+        self.settings = get_settings()
+        self.llm_service = LocalLLMService()
         self.processing_status: Dict[str, Dict[str, Any]] = {}
-    
-    async def save_uploaded_file(self, file: UploadFile, document_id: str, user_id: str) -> str:
-        """Securely save uploaded file with proper naming"""
-        
-        # Create user-specific subdirectory
+
+    async def initialize(self):
+        """Initialize the document processor and LLM service"""
+        try:
+            await self.llm_service.initialize()
+            logger.info("✅ Document processor with local LLM initialized")
+        except Exception as e:
+            logger.warning(f"⚠️ Document processor initialized without LLM: {e}")
+
+    async def save_uploaded_file(self, file, document_id: str, user_id: str) -> str:
+        """Save uploaded file securely"""
         user_upload_dir = os.path.join(self.settings.upload_directory, user_id)
         os.makedirs(user_upload_dir, exist_ok=True)
-        
-        # Generate secure filename
+
         file_extension = os.path.splitext(file.filename)[1]
         secure_filename = f"{document_id}_{uuid.uuid4().hex[:8]}{file_extension}"
         file_path = os.path.join(user_upload_dir, secure_filename)
-        
-        try:
-            async with aiofiles.open(file_path, 'wb') as buffer:
-                content = await file.read()
-                await buffer.write(content)
-                
-            logger.info(f"File saved successfully: {file_path}")
-            return file_path
-            
-        except Exception as e:
-            logger.error(f"File save error: {e}")
-            raise DocumentProcessingError(
-                message="Failed to save uploaded file",
-                error_code="FILE_SAVE_ERROR"
-            )
-    
+
+        async with aiofiles.open(file_path, "wb") as buffer:
+            content = await file.read()
+            await buffer.write(content)
+
+        logger.info(f"File saved: {file_path}")
+        return file_path
+
+    async def get_document_status(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """Get document processing status"""
+        return self.processing_status.get(document_id)
+
     async def process_document_with_ai(
-        self, 
-        document_id: str, 
-        file_path: str, 
+        self,
+        document_id: str,
+        file_path: str,
         options: Dict[str, Any],
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
     ):
-        """Process document with comprehensive AI analysis"""
-        
+        """Process document with local LLM analysis"""
         try:
             # Initialize processing status
             self.processing_status[document_id] = {
+                "document_id": document_id,
                 "status": "processing",
-                "progress": 0,
-                "current_stage": "initializing",
-                "started_at": datetime.utcnow(),
-                "stages": []
+                "progress": {"progress": 10, "current_stage": "Extracting text"},
+                "created_at": datetime.utcnow(),
             }
-            
+
             if progress_callback:
                 await progress_callback(self.processing_status[document_id])
-            
-            # Stage 1: Document analysis with Azure
+
+            # Stage 1: Extract text from document
+            extracted_text, doc_metadata = await self._extract_text_from_file(file_path)
+
             await self._update_progress(
-                document_id, 20, "Analyzing document structure", progress_callback
+                document_id, 40, "Text extracted, analyzing with AI", progress_callback
             )
-            
-            azure_result = await self.azure_service.analyze_document(
-                file_path, options.get("extract_tables", True)
-            )
-            
-            # Stage 2: AI enhancement
+
+            # Stage 2: Enhance with local LLM
+            if options.get("enhance_with_ai", True) and extracted_text.strip():
+                enhanced_result = await self.llm_service.enhance_document_data(
+                    extracted_text, doc_metadata
+                )
+            else:
+                enhanced_result = {
+                    "enhanced_text": extracted_text,
+                    "summary": "Document text extracted successfully",
+                    "key_points": [],
+                    "entities": [],
+                    "confidence": 0.8,
+                }
+
             await self._update_progress(
-                document_id, 50, "Enhancing with AI insights", progress_callback
+                document_id, 80, "AI analysis complete", progress_callback
             )
-            
-            enhanced_result = await self.llm_service.enhance_document_data(
-                azure_result, options
-            )
-            
-            # Stage 3: Structured data extraction
-            await self._update_progress(
-                document_id, 80, "Extracting structured data", progress_callback
-            )
-            
-            structured_data = await self._extract_structured_insights(enhanced_result)
-            
-            # Stage 4: Finalization
-            await self._update_progress(
-                document_id, 100, "Processing complete", progress_callback
-            )
-            
-            # Store final result
+
+            # Stage 3: Finalize results
             final_result = {
-                "status": "completed",
                 "document_id": document_id,
-                "processed_at": datetime.utcnow().isoformat(),
-                "azure_analysis": azure_result,
-                "ai_insights": enhanced_result,
-                "structured_data": structured_data,
-                "processing_options": options
+                "status": "completed",
+                "progress": {"progress": 100, "current_stage": "Complete"},
+                "result": {
+                    "original_text": extracted_text,
+                    "metadata": doc_metadata,
+                    "ai_analysis": enhanced_result,
+                    "processing_options": options,
+                },
+                "created_at": datetime.utcnow(),
+                "completed_at": datetime.utcnow(),
             }
-            
+
             self.processing_status[document_id] = final_result
-            
+
+            if progress_callback:
+                await progress_callback(final_result)
+
         except Exception as e:
-            logger.error(f"Document processing failed for {document_id}: {e}")
-            
+            logger.error(f"Processing failed for {document_id}: {e}")
             self.processing_status[document_id] = {
+                "document_id": document_id,
                 "status": "failed",
                 "error": str(e),
-                "failed_at": datetime.utcnow().isoformat()
+                "created_at": datetime.utcnow(),
             }
-            
+
             if progress_callback:
                 await progress_callback(self.processing_status[document_id])
-            
+
         finally:
-            # Cleanup temporary file
+            # Cleanup uploaded file
             if os.path.exists(file_path):
-                os.remove(file_path)
-    
-    async def get_document_status(self, document_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve document processing status"""
-        return self.processing_status.get(document_id)
-    
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Cleaned up file: {file_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup file {file_path}: {e}")
+
+    async def _extract_text_from_file(
+        self, file_path: str
+    ) -> tuple[str, Dict[str, Any]]:
+        """Extract text from various file formats"""
+        file_extension = os.path.splitext(file_path)[1].lower()
+        filename = os.path.basename(file_path)
+
+        metadata = {
+            "filename": filename,
+            "file_type": file_extension,
+            "file_size": os.path.getsize(file_path),
+            "processing_time": datetime.utcnow().isoformat(),
+        }
+
+        try:
+            if file_extension == ".pdf":
+                text, pdf_metadata = await self._extract_from_pdf(file_path)
+                metadata.update(pdf_metadata)
+                return text, metadata
+
+            elif file_extension in [".doc", ".docx"]:
+                text, doc_metadata = await self._extract_from_docx(file_path)
+                metadata.update(doc_metadata)
+                return text, metadata
+
+            elif file_extension == ".txt":
+                async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+                    text = await f.read()
+                metadata.update({"pages": 1, "word_count": len(text.split())})
+                return text, metadata
+
+            elif file_extension in [".png", ".jpg", ".jpeg"]:
+                # For images, you could add OCR here using pytesseract
+                metadata.update({"type": "image", "ocr_available": False})
+                return (
+                    "Image file uploaded - OCR not implemented in this demo",
+                    metadata,
+                )
+
+            else:
+                return f"Unsupported file type: {file_extension}", metadata
+
+        except Exception as e:
+            logger.error(f"Text extraction failed for {file_path}: {e}")
+            return f"Error extracting text: {str(e)}", metadata
+
+    async def _extract_from_pdf(self, file_path: str) -> tuple[str, Dict[str, Any]]:
+        """Extract text from PDF file"""
+        text = ""
+        metadata = {"pages": 0, "word_count": 0}
+
+        try:
+            with open(file_path, "rb") as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                metadata["pages"] = len(pdf_reader.pages)
+
+                for page_num, page in enumerate(pdf_reader.pages):
+                    try:
+                        page_text = page.extract_text()
+                        text += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to extract text from page {page_num + 1}: {e}"
+                        )
+                        text += (
+                            f"\n--- Page {page_num + 1} ---\n[Text extraction failed]\n"
+                        )
+
+                metadata["word_count"] = len(text.split())
+                return text.strip(), metadata
+
+        except Exception as e:
+            logger.error(f"PDF extraction failed: {e}")
+            return f"PDF extraction error: {str(e)}", metadata
+
+    async def _extract_from_docx(self, file_path: str) -> tuple[str, Dict[str, Any]]:
+        """Extract text from DOCX file"""
+        try:
+            doc = DocxDocument(file_path)
+            text = ""
+
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+
+            metadata = {
+                "pages": 1,  # DOCX doesn't have clear page boundaries
+                "paragraphs": len(doc.paragraphs),
+                "word_count": len(text.split()),
+            }
+
+            return text.strip(), metadata
+
+        except Exception as e:
+            logger.error(f"DOCX extraction failed: {e}")
+            return f"DOCX extraction error: {str(e)}", {"pages": 0, "word_count": 0}
+
     async def _update_progress(
-        self, 
-        document_id: str, 
-        progress: int, 
-        stage: str, 
-        callback: Optional[Callable] = None
+        self,
+        document_id: str,
+        progress: int,
+        stage: str,
+        callback: Optional[Callable] = None,
     ):
-        """Update processing progress with detailed stage information"""
-        
+        """Update processing progress"""
         if document_id in self.processing_status:
-            self.processing_status[document_id].update({
+            self.processing_status[document_id]["progress"] = {
                 "progress": progress,
                 "current_stage": stage,
-                "last_updated": datetime.utcnow().isoformat()
-            })
-            
+            }
+
             if callback:
                 await callback(self.processing_status[document_id])
-    
-    async def _extract_structured_insights(self, enhanced_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract and structure key insights from processed document"""
-        
-        insights = {
-            "key_entities": enhanced_data.get("entities", []),
-            "document_summary": enhanced_data.get("summary", ""),
-            "confidence_scores": enhanced_data.get("confidence", {}),
-            "extracted_tables": enhanced_data.get("tables", []),
-            "metadata": {
-                "page_count": enhanced_data.get("page_count", 0),
-                "word_count": enhanced_data.get("word_count", 0),
-                "language": enhanced_data.get("language", "unknown")
-            }
-        }
-        
-        return insights
+
+    async def list_documents(
+        self, limit: int = 10, offset: int = 0, status_filter: Optional[str] = None
+    ):
+        """List processed documents"""
+        docs = list(self.processing_status.values())
+        if status_filter:
+            docs = [d for d in docs if d.get("status") == status_filter]
+        return docs[offset : offset + limit]
