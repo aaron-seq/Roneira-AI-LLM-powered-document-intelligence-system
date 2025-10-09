@@ -1,0 +1,85 @@
+# ==============================================================================
+# Fly.io Deployment Configuration
+# Free tier deployment for Roneira AI Document Intelligence
+# ==============================================================================
+
+# Application name (change this to your unique app name)
+app = "roneira-ai-doc-intelligence"
+primary_region = "lax"
+
+# Build configuration
+[build]
+  dockerfile = "Dockerfile.free"
+  target = "production"
+
+# Environment variables
+[env]
+  ENVIRONMENT = "production"
+  HOST = "0.0.0.0"
+  USE_LOCAL_LLM = "false"
+  OCR_ENGINE = "tesseract"
+  MAX_FILE_SIZE_MB = "25"
+  ALLOWED_ORIGINS = "*"
+  DATABASE_URL = "sqlite+aiosqlite:///./data/roneira.db"
+
+# HTTP service configuration
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+# Health checks
+[http_service.checks]
+  [http_service.checks.health]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    path = "/health"
+    port = 8000
+    protocol = "http"
+    restart_limit = 3
+    timeout = "10s"
+
+# Resource limits (free tier)
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
+
+# Persistent volumes for data
+[mounts]
+  source = "roneira_data"
+  destination = "/app/data"
+
+# Secrets (set these with: fly secrets set KEY=value)
+# fly secrets set SECRET_KEY=your-secret-key
+# fly secrets set DEEPSEEK_API_KEY=your-deepseek-key
+
+# Optional: Redis addon (if needed)
+# Uncomment to add Redis
+# [[services]]
+# name = "redis"
+# image = "redis:7-alpine"
+# command = ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+
+# Processes
+[[processes]]
+name = "app"
+cmd = ["python", "main_free.py"]
+
+# Optional background worker
+# [[processes]]
+# name = "worker"
+# cmd = ["python", "-c", "print('Worker ready')"]
+
+# Deploy configuration
+[deploy]
+  release_command = "echo 'Preparing deployment...'"
+  
+# Metrics (optional)
+[metrics]
+  port = 9090
+  path = "/metrics"
