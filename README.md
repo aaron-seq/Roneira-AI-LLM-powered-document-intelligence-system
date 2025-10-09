@@ -33,42 +33,42 @@ An enterprise-grade platform for intelligent document processing, leveraging Azu
   </a>
 </p>
 
-## 📖 Table of Contents
+## Table of Contents
 
-- [✨ Overview](#-overview)
-- [🎯 Key Features](#-key-features)
-- [🏛️ System Architecture](#️-system-architecture)
-- [🚀 Getting Started](#-getting-started)
-- [📂 Project Structure](#-project-structure)
-- [⚙️ Configuration](#️-configuration)
-- [🛠️ Development & Operations](#️-development--operations)
-- [🔗 API Endpoints](#-api-endpoints)
-- [🤝 Contributing](#-contributing)
-- [📜 License](#-license)
+- [ Overview](#-overview)
+- [ Key Features](#-key-features)
+- [ System Architecture](#️-system-architecture)
+- [ Getting Started](#-getting-started)
+- [ Project Structure](#-project-structure)
+- [ Configuration](#️-configuration)
+- [ Development & Operations](#️-development--operations)
+- [ API Endpoints](#-api-endpoints)
+- [ Contributing](#-contributing)
+- [ License](#-license)
 
-## ✨ Overview
+##  Overview
 
 This project is a comprehensive, production-ready platform designed to revolutionize document processing. By integrating Azure AI services, Large Language Models (LLMs), and modern web technologies, it provides a scalable, secure, and high-performance solution for extracting intelligent insights from your documents.
 
-## 🎯 Key Features
+##  Key Features
 
 | Feature | Description | Technology Stack |
 |---------|-------------|------------------|
-| 🧠 **AI-Powered Engine** | Utilizes GPT-4 Turbo for contextual understanding and intelligent data extraction from unstructured text. | Azure OpenAI, LangChain |
-| 📄 **Advanced OCR** | Achieves high-accuracy text extraction for diverse document types and layouts. | Azure Document Intelligence |
-| ⚡ **Real-time Updates** | Live status tracking of document processing via a persistent WebSocket connection. | WebSockets, FastAPI |
-| 🖥️ **Modern Interface** | A responsive and intuitive user interface built for a seamless user experience. | React 18, TypeScript, Material-UI |
-| 💨 **High Performance** | Asynchronous architecture and connection pooling ensure low latency and high throughput. | Async/await, Connection Pooling |
-| 🛡️ **Enterprise Security** | Implements robust security protocols including JWT and secure infrastructure practices. | JWT, OAuth2, Secure Containers |
-| 🐳 **Container-Ready** | Multi-stage Docker builds and Compose configurations for consistent, reproducible deployments. | Docker, Docker Compose |
-| 🔄 **CI/CD Automation** | Fully automated pipeline for testing, security scanning, and deploying to various environments. | GitHub Actions |
+|  **AI-Powered Engine** | Utilizes GPT-4 Turbo for contextual understanding and intelligent data extraction from unstructured text. | Azure OpenAI, LangChain |
+|  **Advanced OCR** | Achieves high-accuracy text extraction for diverse document types and layouts. | Azure Document Intelligence |
+|  **Real-time Updates** | Live status tracking of document processing via a persistent WebSocket connection. | WebSockets, FastAPI |
+|  **Modern Interface** | A responsive and intuitive user interface built for a seamless user experience. | React 18, TypeScript, Material-UI |
+|  **High Performance** | Asynchronous architecture and connection pooling ensure low latency and high throughput. | Async/await, Connection Pooling |
+|  **Enterprise Security** | Implements robust security protocols including JWT and secure infrastructure practices. | JWT, OAuth2, Secure Containers |
+|  **Container-Ready** | Multi-stage Docker builds and Compose configurations for consistent, reproducible deployments. | Docker, Docker Compose |
+|  **CI/CD Automation** | Fully automated pipeline for testing, security scanning, and deploying to various environments. | GitHub Actions |
 
 ## 🏛️ System Architecture
 
 The system follows a microservices-oriented architecture, ensuring separation of concerns, scalability, and maintainability.
 
 <details>
-<summary><strong>▶️ View Architecture Diagram</strong></summary>
+<summary><strong> View Architecture Diagram</strong></summary>
 
 ```
 graph TD
@@ -92,16 +92,16 @@ graph TD
 
 </details>
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Prerequisites
 
-- Python 3.11+ 🐍
-- Node.js 18+ ⚡
-- Docker & Docker Compose 🐳
-- Azure account with AI Services access ☁️
+- Python 3.11+ 
+- Node.js 18+ 
+- Docker & Docker Compose 
+- Azure account with AI Services access 
 
-### ⚡ One-Command Quick Start
+### One-Command Quick Start
 
 This single command clones the repository, sets up the environment, builds containers, and launches the entire application stack.
 
@@ -114,7 +114,7 @@ make quick-start
 ### Manual Setup Instructions
 
 <details>
-<summary><strong>▶️ View Manual Setup Steps</strong></summary>
+<summary><strong> View Manual Setup Steps</strong></summary>
 
 ```
 # Install Dependencies
@@ -145,7 +145,7 @@ docker pull aaronseq12/llm-document-intelligence:latest
 docker-compose up -d
 ```
 
-### 📦 PyPI Installation (Backend Package)
+### PyPI Installation (Backend Package)
 
 ```
 # Install the core processing engine
@@ -162,12 +162,12 @@ processor = DocumentProcessor(azure_key="your-key")
 - **Backend API:** http://localhost:8000 ⚙️
 - **Interactive API Docs:** http://localhost:8000/docs 📚
 
-## 📂 Project Structure
+##  Project Structure
 
 The repository is organized into distinct modules for the backend, frontend, and infrastructure, promoting a clean and scalable codebase.
 
 <details>
-<summary><strong>▶️ View Directory Tree</strong></summary>
+<summary><strong> View Directory Tree</strong></summary>
 
 ```
 LLM-powered-document-intelligence-system/
@@ -262,21 +262,21 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 - ✅ **Documentation:** All public functions must be documented
 - ✅ **Type Safety:** TypeScript (Frontend), Type hints (Backend)
 
-## 📊 Performance Metrics
+## Performance Metrics
 
 - **Processing Speed:** ~2-5 seconds per document (average)
 - **Accuracy:** 95%+ OCR accuracy on standard documents
 - **Concurrent Users:** Supports 100+ simultaneous connections
 - **Uptime:** 99.9% availability target
 
-## 🛡️ Security
+## Security
 
 - **Authentication:** JWT-based with refresh tokens
 - **Data Encryption:** AES-256 for data at rest, TLS 1.3 for data in transit
 - **Access Control:** Role-based permissions (RBAC)
 - **Audit Logging:** Comprehensive activity tracking
 
-## 📜 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
