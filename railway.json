@@ -1,0 +1,54 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.free"
+  },
+  "deploy": {
+    "startCommand": "python main_free.py",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 30,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "ENVIRONMENT": "production",
+        "PORT": "$PORT",
+        "DATABASE_URL": "sqlite+aiosqlite:///./data/roneira.db",
+        "REDIS_URL": "$REDIS_URL",
+        "SECRET_KEY": "$SECRET_KEY",
+        "DEEPSEEK_API_KEY": "$DEEPSEEK_API_KEY",
+        "USE_LOCAL_LLM": "false",
+        "OCR_ENGINE": "tesseract",
+        "MAX_FILE_SIZE_MB": "25",
+        "ALLOWED_ORIGINS": "*"
+      }
+    }
+  },
+  "regions": ["us-west1"],
+  "services": [
+    {
+      "name": "roneira-ai",
+      "source": {
+        "type": "image",
+        "image": "roneira-ai:latest"
+      },
+      "variables": {
+        "ENVIRONMENT": "production",
+        "USE_LOCAL_LLM": "false"
+      }
+    },
+    {
+      "name": "redis",
+      "source": {
+        "type": "image",
+        "image": "redis:7-alpine"
+      },
+      "variables": {
+        "REDIS_ARGS": "--maxmemory 64mb --maxmemory-policy allkeys-lru"
+      }
+    }
+  ]
+}
