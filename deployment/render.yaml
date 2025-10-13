@@ -1,0 +1,50 @@
+services:
+  # Main web service
+  - type: web
+    name: document-intelligence-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: DATABASE_URL
+        fromService:
+          type: pserv
+          name: document-intelligence-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: document-intelligence-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: AZURE_OPENAI_API_KEY
+        sync: false
+      - key: AZURE_OPENAI_ENDPOINT
+        sync: false
+      - key: AZURE_DOCUMENT_INTELLIGENCE_KEY
+        sync: false
+      - key: AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT
+        sync: false
+
+  # PostgreSQL database
+  - type: pserv
+    name: document-intelligence-db
+    env: postgresql
+    plan: free
+    region: oregon
+    ipAllowList: []
+
+  # Redis cache
+  - type: redis
+    name: document-intelligence-redis
+    plan: free
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
