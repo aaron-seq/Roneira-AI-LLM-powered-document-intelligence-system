@@ -1,0 +1,342 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, modernize-code-structure ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+
+jobs:
+  # Code Quality and Security Checks
+  code-quality:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install bandit safety
+        
+    - name: Code Formatting Check (Black)
+      run: black --check --diff app/ tests/
+      
+    - name: Import Sorting Check (isort)
+      run: isort --check-only --diff app/ tests/
+      
+    - name: Linting (Flake8)
+      run: flake8 app/ tests/ --max-line-length=88 --extend-ignore=E203
+      
+    - name: Type Checking (MyPy)
+      run: mypy app/ --ignore-missing-imports
+      
+    - name: Security Check (Bandit)
+      run: bandit -r app/ -f json -o bandit-report.json
+      continue-on-error: true
+      
+    - name: Dependency Security Check (Safety)
+      run: safety check --json --output safety-report.json
+      continue-on-error: true
+      
+    - name: Upload Security Reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  # Unit and Integration Tests
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    strategy:
+      matrix:
+        test-type: [unit, integration]
+        
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Set Test Environment Variables
+      run: |
+        echo "ENVIRONMENT=test" >> $GITHUB_ENV
+        echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/test_db" >> $GITHUB_ENV
+        echo "REDIS_URL=redis://localhost:6379/0" >> $GITHUB_ENV
+        echo "SECRET_KEY=test-secret-key-for-github-actions-only" >> $GITHUB_ENV
+        
+    - name: Run Unit Tests
+      if: matrix.test-type == 'unit'
+      run: |
+        pytest tests/ -v --cov=app --cov-report=xml --cov-report=html \
+               --junitxml=junit-unit.xml -m "not integration"
+        
+    - name: Run Integration Tests
+      if: matrix.test-type == 'integration'
+      run: |
+        pytest tests/ -v --cov=app --cov-report=xml --cov-report=html \
+               --junitxml=junit-integration.xml -m "integration"
+               
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.test-type }}
+        path: |
+          junit-*.xml
+          htmlcov/
+          coverage.xml
+
+  # Build and Push Docker Image
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [code-quality, test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Extract Metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.DOCKER_USERNAME }}/document-intelligence-system
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: Build and Push Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64,linux/arm64
+
+  # Deploy to Staging (Railway)
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://your-staging-app.railway.app
+      
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to Railway
+      uses: railwayapp/railway-deploy@v2
+      with:
+        railway-token: ${{ secrets.RAILWAY_TOKEN }}
+        service: document-intelligence-staging
+        environment: staging
+
+  # Deploy to Production (Render/Railway)
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://your-production-app.render.com
+      
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to Production
+      run: |
+        # Add your production deployment script here
+        # This could be Railway, Render, or any other platform
+        echo "Deploying to production..."
+        curl -X POST "${{ secrets.PRODUCTION_DEPLOY_WEBHOOK }}"
+
+  # Performance and Load Testing
+  performance-test:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/develop'
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Install K6
+      run: |
+        curl https://github.com/grafana/k6/releases/download/v0.46.0/k6-v0.46.0-linux-amd64.tar.gz -L | tar xvz --strip-components 1
+        sudo mv k6 /usr/local/bin/
+        
+    - name: Run Load Tests
+      run: |
+        # Create a simple K6 test script
+        cat > load-test.js << 'EOF'
+        import http from 'k6/http';
+        import { check } from 'k6';
+        
+        export const options = {
+          stages: [
+            { duration: '2m', target: 10 },
+            { duration: '5m', target: 10 },
+            { duration: '2m', target: 0 },
+          ],
+        };
+        
+        export default function () {
+          const response = http.get('https://your-staging-app.railway.app/health');
+          check(response, {
+            'status is 200': (r) => r.status === 200,
+            'response time < 2000ms': (r) => r.timings.duration < 2000,
+          });
+        }
+        EOF
+        
+        k6 run load-test.js
+
+  # Security Scanning
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy Vulnerability Scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ secrets.DOCKER_USERNAME }}/document-intelligence-system:latest'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: Upload Trivy Scan Results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Documentation Update
+  docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install Documentation Dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install sphinx sphinx-rtd-theme
+        
+    - name: Generate API Documentation
+      run: |
+        # Generate OpenAPI spec and documentation
+        python -c "from app.main import app; import json; print(json.dumps(app.openapi()))" > openapi.json
+        
+    - name: Commit Documentation Updates
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: 'docs: Update API documentation [skip ci]'
+        file_pattern: 'openapi.json docs/'
+
+  # Notification
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Notify Success
+      if: needs.deploy-production.result == 'success' || needs.deploy-staging.result == 'success'
+      run: |
+        echo "Deployment successful! 🎉"
+        # Add Slack/Discord/Email notification here
+        
+    - name: Notify Failure
+      if: needs.deploy-production.result == 'failure' || needs.deploy-staging.result == 'failure'
+      run: |
+        echo "Deployment failed! ❌"
+        # Add failure notification here
