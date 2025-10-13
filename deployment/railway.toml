@@ -1,0 +1,25 @@
+[build]
+buildCommand = "pip install -r requirements.txt"
+watchPatterns = ["**/*.py", "requirements.txt"]
+
+[deploy]
+startCommand = "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[env]
+ENVIRONMENT = "production"
+PYTHONPATH = "/app"
+PORT = "8000"
+
+# Health check configuration
+[healthCheck]
+path = "/health"
+interval = 30
+timeout = 10
+
+# Scaling configuration
+[scaling]
+minInstances = 1
+maxInstances = 3
+targetCpuUtilization = 70

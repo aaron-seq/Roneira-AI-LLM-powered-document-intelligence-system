@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "name": "document-intelligence-system",
+  "builds": [
+    {
+      "src": "app/main.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "50mb",
+        "runtime": "python3.11"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app/main.py"
+    }
+  ],
+  "env": {
+    "ENVIRONMENT": "production",
+    "PYTHONPATH": ".",
+    "DATABASE_URL": "@database_url",
+    "REDIS_URL": "@redis_url",
+    "SECRET_KEY": "@secret_key",
+    "AZURE_OPENAI_API_KEY": "@azure_openai_key",
+    "AZURE_OPENAI_ENDPOINT": "@azure_openai_endpoint",
+    "AZURE_DOCUMENT_INTELLIGENCE_KEY": "@azure_doc_key",
+    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT": "@azure_doc_endpoint"
+  },
+  "functions": {
+    "app/main.py": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
+  ]
+}
