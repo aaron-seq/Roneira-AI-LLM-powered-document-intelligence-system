@@ -354,22 +354,6 @@ pytest tests/ -v
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Changelog
-
-### v2.0.0 (Latest)
-- ✨ **New**: Modern FastAPI architecture with async/await
-- ✨ **New**: Comprehensive testing suite
-- ✨ **New**: Production-ready Docker containers
-- ✨ **New**: CI/CD pipelines with GitHub Actions
-- ✨ **New**: Multi-platform deployment support
-- 🔧 **Improved**: Better error handling and validation
-- 🔧 **Improved**: Enhanced security with JWT authentication
-- 🔧 **Improved**: Performance optimizations
-- 📚 **Docs**: Updated documentation and API references
-
-### v1.0.0
-- 🎉 **Initial**: Basic document processing functionality
-- 🎉 **Initial**: Azure AI services integration
 - 🎉 **Initial**: Web interface and API endpoints
 
 ---
