@@ -1,1 +1,157 @@
-node_modules
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+PYTHONPATH
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env-*/
+env-*/
+pyvenv.cfg
+
+# Environment variables and secrets
+.env
+.env.local
+.env.production
+.env.development
+.env.staging
+*.env
+.envrc
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
+documents.db
+
+# Upload directories and temporary files
+uploads/
+processed/
+logs/
+temp/
+tmp/
+*.log
+*.tmp
+*.temp
+
+# Redis dump files
+dump.rdb
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+.spyderproject
+.spyproject
+.rope_project/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Testing
+.pytest_cache/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+
+# Documentation
+docs/_build/
+.mkdocs/
+site/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# FastAPI/Uvicorn
+.uvicorn/
+
+# Docker
+.dockerignore
+
+# Node.js (for frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn/
+dist/
+build/
+
+# TypeScript
+*.tsbuildinfo
+
+# Azure and cloud credentials
+.azure/
+.aws/
+.gcp/
+
+# Local configuration overrides
+config.local.py
+settings.local.py
+
+# Production secrets
+secrets/
+certs/
+keys/
+*.pem
+*.key
+*.crt
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Package manager files
+Pipfile.lock
+poetry.lock
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/

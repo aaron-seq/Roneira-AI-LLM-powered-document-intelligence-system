@@ -19,7 +19,7 @@ alembic==1.13.1
 redis[hiredis]==5.0.1
 
 # Azure Services
-azure-ai-documentintelligence==1.0.0b1
+azure-ai-documentintelligence==1.0.0
 azure-identity==1.15.0
 azure-core==1.29.5
 
@@ -30,9 +30,8 @@ langchain-openai==0.0.2
 langchain-community==0.0.1
 
 # HTTP and API clients
-httpx==0.25.2  # Async HTTP client for FastAPI and testing
-aiohttp==3.9.1  # Alternative async HTTP client (if needed for specific services)
-requests==2.31.0  # Sync HTTP client for simple operations
+httpx==0.25.2
+requests==2.31.0
 
 # Rate limiting
 slowapi==0.1.9
@@ -41,6 +40,7 @@ slowapi==0.1.9
 Pillow==10.1.0
 pdfplumber==0.10.3
 python-docx==1.1.0
+python-magic==0.4.27
 
 # Utilities
 python-dotenv==1.0.0
