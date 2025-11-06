@@ -1,4 +1,5 @@
-"""Application configuration management for the Document Intelligence System.
+"""
+Application configuration management for the Document Intelligence System.
 
 Provides secure, validated configuration loading from environment variables
 with proper validation and environment-specific settings.
@@ -145,9 +146,20 @@ class ApplicationConfiguration(BaseSettings):
         """Get Azure OpenAI configuration."""
         return {
             "api_key": self.azure_openai_api_key,
-            "api_base": self.azure_openai_endpoint,
+            "azure_endpoint": self.azure_openai_endpoint,  # Fixed: was api_base
             "api_version": self.azure_openai_api_version,
             "deployment_name": self.azure_openai_deployment_name
+        }
+    
+    def get_azure_document_intelligence_config(self) -> dict:
+        """Get Azure Document Intelligence configuration.
+        
+        Returns configuration dictionary for Azure Document Intelligence service.
+        This method was missing and caused import errors in services.
+        """
+        return {
+            "key": self.azure_doc_intelligence_key,
+            "endpoint": self.azure_doc_intelligence_endpoint
         }
     
     def get_redis_configuration(self) -> dict:
@@ -192,3 +204,6 @@ def get_application_settings() -> ApplicationConfiguration:
 
 # Global settings instance
 application_settings = get_application_settings()
+
+# Legacy alias for backward compatibility
+settings = application_settings
