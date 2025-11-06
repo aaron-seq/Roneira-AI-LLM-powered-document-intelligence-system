@@ -25,7 +25,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from config import settings
+from config import application_settings as settings
 from database import get_db_session, initialize_database
 from llm_service import llm_service
 from azure_document_intelligence import azure_document_intelligence_service
@@ -49,11 +49,20 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
+        disconnected = []
         for connection in self.active_connections:
-            await connection.send_text(message)
+            try:
+                await connection.send_text(message)
+            except Exception:
+                disconnected.append(connection)
+        
+        # Clean up disconnected connections
+        for conn in disconnected:
+            self.disconnect(conn)
 
 
 connection_manager = ConnectionManager()
@@ -77,7 +86,7 @@ async def lifespan(app: FastAPI):
     """Handles application startup and shutdown events."""
     logger.info("Starting up the LLM Document Intelligence System...")
     # Ensure upload directory exists on startup
-    os.makedirs(settings.UPLOAD_DIRECTORY, exist_ok=True)
+    os.makedirs(settings.upload_directory, exist_ok=True)
 
     await initialize_database()
     await redis_client.connect()
@@ -100,7 +109,7 @@ app = FastAPI(
 # --- Middleware ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -127,15 +136,13 @@ async def login(username: str = Form(...), password: str = Form(...)):
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    # For now, we'll make the user dependency optional to simplify testing
     current_user: str = Depends(get_current_user),
 ):
     """Uploads a document and queues it for asynchronous processing."""
-    current_user = "test_user"  # Hardcoded for now
     try:
         document_id = f"doc_{datetime.utcnow().timestamp()}"
         file_path = os.path.join(
-            settings.UPLOAD_DIRECTORY, f"{document_id}_{file.filename}"
+            settings.upload_directory, f"{document_id}_{file.filename}"
         )
 
         with open(file_path, "wb") as buffer:
@@ -188,14 +195,15 @@ async def process_document_in_background(document_id: str, file_path: str, user:
         )
 
         # 2. Analyze with Azure Document Intelligence
-        azure__result = (
+        # FIXED: Changed azure__result to azure_result (removed double underscore)
+        azure_result = (
             await azure_document_intelligence_service.analyze_document_from_file(
                 file_path
             )
         )
         await redis_client.set(status_key, {"status": "processing", "progress": 50})
 
-        # 3. Enhance with LLM
+        # 3. Enhance with LLM - now uses correctly named variable
         llm_result = await llm_service.enhance_extracted_data(azure_result)
         await redis_client.set(status_key, {"status": "processing", "progress": 90})
 
@@ -219,12 +227,17 @@ async def process_document_in_background(document_id: str, file_path: str, user:
 
     except Exception as e:
         logger.error(f"Error processing document {document_id}: {e}", exc_info=True)
-        await redis_client.set(status_key, {"status": "failed", "error": str(e)})
+        error_status = {"status": "failed", "error": str(e)}
+        await redis_client.set(status_key, error_status)
         await connection_manager.broadcast(
-            json.dumps({"document_id": document_id, "status": "failed"})
+            json.dumps({"document_id": document_id, "status": "failed", "error": str(e)})
         )
+        raise  # Re-raise to ensure proper error logging
 
     finally:
         # Clean up the temporary file
         if os.path.exists(file_path):
-            os.remove(file_path)
+            try:
+                os.remove(file_path)
+            except OSError as e:
+                logger.warning(f"Failed to remove temporary file {file_path}: {e}")
