@@ -1,4 +1,4 @@
-# Document Intelligence System
+# Document Intelligence System 1.7
 
 > Enterprise-grade document processing with AI-powered insights and modern cloud-native architecture
 
