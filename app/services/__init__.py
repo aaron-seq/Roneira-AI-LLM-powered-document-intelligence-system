@@ -7,10 +7,18 @@ caching, and external API integrations.
 # Document processing services
 from .document_intelligence_service import DocumentIntelligenceService
 
-# Caching services  
+# Azure document analysis adapter
+from .azure_document_service import AzureDocumentAnalyzer
+
+# Language model processing adapter
+from .language_model_service import LanguageModelProcessor
+
+# Caching services
 from .cache_service import CacheService
 
 __all__ = [
     "DocumentIntelligenceService",
-    "CacheService"
+    "AzureDocumentAnalyzer",
+    "LanguageModelProcessor",
+    "CacheService",
 ]

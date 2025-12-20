@@ -88,7 +88,7 @@ class LargeLanguageModelService:
                 return
 
             try:
-                azure_config = settings.get_azure_openai_config()
+                azure_config = settings.get_azure_openai_configuration()
                 self.llm = AzureChatOpenAI(
                     openai_api_version=azure_config["api_version"],
                     azure_deployment=azure_config["deployment_name"],
