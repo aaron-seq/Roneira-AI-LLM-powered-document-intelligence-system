@@ -12,10 +12,10 @@ from typing import Dict, Any, Optional, List
 import asyncio
 
 from config import application_settings
-from core.exceptions import DocumentProcessingError, ExternalServiceError
-from services.azure_document_service import AzureDocumentAnalyzer
-from services.language_model_service import LanguageModelProcessor
-from core.database_manager import get_database_session, DocumentRecord
+from app.core.exceptions import DocumentProcessingError, ExternalServiceError
+from app.services.azure_document_service import AzureDocumentAnalyzer
+from app.services.language_model_service import LanguageModelProcessor
+from app.core.database_manager import get_database_session, DocumentRecord
 from sqlalchemy import select, update
 
 logger = logging.getLogger(__name__)
