@@ -30,11 +30,23 @@ from backend.core.database import DatabaseManager
 from backend.services.document_processor import DocumentProcessorService
 from backend.services.websocket_manager import WebSocketManager
 from backend.services.auth_service import AuthService
+from backend.services.chat_service import ChatService
+from backend.services.guardrail_service import GuardrailService
 from backend.models.responses import (
     HealthCheckResponse,
     DocumentUploadResponse,
     DocumentStatusResponse,
     AuthTokenResponse,
+)
+from backend.models.chat_models import (
+    ChatRequest,
+    ChatResponse as ChatAPIResponse,
+    SearchRequest,
+    SearchResponse,
+    IndexDocumentRequest,
+    IndexDocumentResponse,
+    ConversationHistoryResponse,
+    RAGStatsResponse,
 )
 
 # Configure logging
@@ -55,12 +67,15 @@ db_manager: Optional[DatabaseManager] = None
 websocket_manager: Optional[WebSocketManager] = None
 document_processor: Optional[DocumentProcessorService] = None
 auth_service: Optional[AuthService] = None
+chat_service: Optional[ChatService] = None
+guardrail_service: Optional[GuardrailService] = None
 
 
 @asynccontextmanager
 async def application_lifespan(app: FastAPI):
     """Enhanced application lifecycle management"""
     global db_manager, websocket_manager, document_processor, auth_service
+    global chat_service, guardrail_service
 
     settings = get_settings()
     logger.info("🚀 Starting Document Intelligence System...")
@@ -77,6 +92,12 @@ async def application_lifespan(app: FastAPI):
         # Initialize AI services
         await document_processor.initialize()
 
+        # Initialize RAG services
+        chat_service = ChatService()
+        guardrail_service = GuardrailService()
+        await chat_service.initialize()
+        logger.info("✅ RAG services initialized")
+
         # Create upload directories
         os.makedirs(settings.upload_directory, exist_ok=True)
         os.makedirs(settings.processed_files_directory, exist_ok=True)
@@ -86,10 +107,10 @@ async def application_lifespan(app: FastAPI):
         yield
 
     except Exception as e:
-        logger.error(f"❌ Startup failed: {e}")
+        logger.error(f" Startup failed: {e}")
         raise
     finally:
-        logger.info("🛑 Shutting down gracefully...")
+        logger.info(" Shutting down gracefully...")
         if db_manager:
             await db_manager.close()
 
@@ -99,7 +120,7 @@ def create_application() -> FastAPI:
     settings = get_settings()
 
     application = FastAPI(
-        title="🤖 AI Document Intelligence System",
+        title="AI Document Intelligence System",
         description="Enterprise-grade document processing with AI/ML capabilities",
         version="2.0.0",
         docs_url="/api/docs" if settings.debug else None,
@@ -377,6 +398,147 @@ async def process_document_async(
     except Exception as e:
         logger.error(f"Document processing failed for {document_id}: {e}")
         await websocket_manager.broadcast_error(document_id, str(e))
+
+
+# ============ RAG API Endpoints ============
+
+
+@app.post("/api/chat", response_model=ChatAPIResponse, tags=["Chat"])
+async def chat_completion(request: ChatRequest) -> ChatAPIResponse:
+    """RAG-powered chat completion endpoint."""
+    if not chat_service:
+        raise HTTPException(status_code=500, detail="Chat service unavailable")
+
+    try:
+        # Validate input with guardrails
+        if guardrail_service:
+            validation = await guardrail_service.validate_input(request.message)
+            if not validation.is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Input validation failed: {validation.details}",
+                )
+            message = validation.filtered_content or request.message
+        else:
+            message = request.message
+
+        # Process chat
+        response = await chat_service.chat(
+            message=message,
+            session_id=request.session_id,
+            use_rag=request.use_rag,
+            rag_top_k=request.rag_top_k,
+            document_filter=request.document_id,
+        )
+
+        return ChatAPIResponse(
+            message=response.message,
+            session_id=response.session_id,
+            sources=response.sources,
+            model=response.model,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/search", response_model=SearchResponse, tags=["RAG"])
+async def semantic_search(request: SearchRequest) -> SearchResponse:
+    """Semantic search over indexed documents."""
+    if not chat_service:
+        raise HTTPException(status_code=500, detail="Search service unavailable")
+
+    try:
+        results = await chat_service.search_documents(
+            query=request.query, top_k=request.top_k
+        )
+
+        return SearchResponse(
+            query=request.query, results=results, total_results=len(results)
+        )
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/api/documents/{document_id}/index",
+    response_model=IndexDocumentResponse,
+    tags=["RAG"],
+)
+async def index_document_for_rag(
+    document_id: str, request: IndexDocumentRequest
+) -> IndexDocumentResponse:
+    """Index a document for RAG retrieval."""
+    if not chat_service:
+        raise HTTPException(status_code=500, detail="Indexing service unavailable")
+
+    try:
+        result = await chat_service.index_document(
+            document_id=document_id, content=request.content, metadata=request.metadata
+        )
+
+        return IndexDocumentResponse(**result)
+    except Exception as e:
+        logger.error(f"Indexing error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get(
+    "/api/memory/{session_id}",
+    response_model=ConversationHistoryResponse,
+    tags=["Chat"],
+)
+async def get_conversation_history(session_id: str) -> ConversationHistoryResponse:
+    """Get conversation history for a session."""
+    if not chat_service:
+        raise HTTPException(status_code=500, detail="Chat service unavailable")
+
+    try:
+        history = await chat_service.get_session_history(session_id)
+        return ConversationHistoryResponse(
+            session_id=session_id, messages=history, message_count=len(history)
+        )
+    except Exception as e:
+        logger.error(f"Memory retrieval error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/memory/{session_id}", tags=["Chat"])
+async def clear_conversation(session_id: str) -> Dict[str, Any]:
+    """Clear conversation history for a session."""
+    if not chat_service:
+        raise HTTPException(status_code=500, detail="Chat service unavailable")
+
+    try:
+        success = await chat_service.clear_session(session_id)
+        return {"session_id": session_id, "cleared": success}
+    except Exception as e:
+        logger.error(f"Memory clear error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/rag/stats", response_model=RAGStatsResponse, tags=["RAG"])
+async def get_rag_statistics() -> RAGStatsResponse:
+    """Get RAG system statistics."""
+    if not chat_service:
+        raise HTTPException(status_code=500, detail="Chat service unavailable")
+
+    try:
+        stats = await chat_service.get_stats()
+        guardrail_stats = guardrail_service.get_stats() if guardrail_service else {}
+
+        return RAGStatsResponse(
+            vector_store=stats.get("retrieval", {}).get("vector_store", {}),
+            embedding_cache=stats.get("retrieval", {}).get("embedding_cache", {}),
+            memory=stats.get("memory", {}),
+            guardrails=guardrail_stats,
+        )
+    except Exception as e:
+        logger.error(f"Stats retrieval error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Error handlers
