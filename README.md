@@ -1,4 +1,6 @@
-# Document Intelligence System 2
+# Document Intelligence System 2.0
+
+
 
 > Enterprise-grade document processing with AI-powered insights and modern cloud-native architecture
 
