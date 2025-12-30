@@ -15,10 +15,11 @@ A production-ready, scalable document intelligence system that combines the powe
 ### Key Features
 
 - **AI-Powered Processing**: Azure Document Intelligence + GPT-4 for comprehensive document analysis
+- **RAG Pipeline**: Semantic search with vector embeddings and context-aware chat
 - **Modern Architecture**: FastAPI, async/await, proper dependency injection
 - **Production Ready**: Docker containerization, CI/CD pipelines, monitoring
 - **Cloud Native**: Optimized for Railway, Render, Vercel, and other cloud platforms
-- **Security First**: JWT authentication, input validation, rate limiting
+- **Security First**: JWT authentication, input validation, rate limiting, PII detection
 - **Scalable**: Redis caching, connection pooling, async processing
 - **Developer Friendly**: Comprehensive testing, type hints, documentation
 
