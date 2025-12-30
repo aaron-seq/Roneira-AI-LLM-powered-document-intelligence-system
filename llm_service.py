@@ -18,11 +18,11 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from langchain.chat_models import AzureChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
-from langchain.callbacks.base import BaseCallbackHandler
+from langchain_openai import AzureChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.prompts import PromptTemplate
+from langchain_classic.chains import LLMChain
+from langchain_core.callbacks import BaseCallbackHandler
 
 from config import settings
 
