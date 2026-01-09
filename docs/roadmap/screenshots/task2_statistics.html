@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dataset Statistics | Task 2: Training Data Generation</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #f8fafc;
+            margin-bottom: 0.5rem;
+        }
+        .header .subtitle { color: #94a3b8; font-size: 0.95rem; }
+        .header .badge {
+            display: inline-block;
+            background: #3b82f6;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-top: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .card.wide { grid-column: span 2; }
+        .card h3 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1.25rem;
+            color: #94a3b8;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-row .label { color: #94a3b8; }
+        .stat-row .value { font-weight: 600; color: #f8fafc; }
+        .chart-container { height: 220px; position: relative; }
+        .split-visual {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .split-bar {
+            height: 40px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+        .split-train { background: #3b82f6; flex: 7; }
+        .split-val { background: #22c55e; flex: 1.5; }
+        .split-test { background: #f59e0b; flex: 1.5; }
+        .split-legend {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 0.75rem;
+        }
+        .split-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+        .split-legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 3px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 0.75rem 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        th {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            font-weight: 600;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Dataset Statistics</h1>
+        <p class="subtitle">AI Developer Roadmap - Task 2: Training & Test Data Generation</p>
+        <span class="badge">Dataset Analysis</span>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Dataset Overview</h3>
+            <div class="stat-row">
+                <span class="label">Total QA Pairs</span>
+                <span class="value">1,000</span>
+            </div>
+            <div class="stat-row">
+                <span class="label">Positive Examples</span>
+                <span class="value">800</span>
+            </div>
+            <div class="stat-row">
+                <span class="label">Negative Examples</span>
+                <span class="value">150</span>
+            </div>
+            <div class="stat-row">
+                <span class="label">Edge Cases</span>
+                <span class="value">50</span>
+            </div>
+            <div class="stat-row">
+                <span class="label">Source Documents</span>
+                <span class="value">47</span>
+            </div>
+            <div class="stat-row">
+                <span class="label">Unique Categories</span>
+                <span class="value">12</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Difficulty Distribution</h3>
+            <div class="chart-container">
+                <canvas id="difficultyChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Question Type Distribution</h3>
+            <div class="chart-container">
+                <canvas id="typeChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Train / Validation / Test Split</h3>
+            <div class="split-visual">
+                <div class="split-bar split-train">700 (70%)</div>
+                <div class="split-bar split-val">150 (15%)</div>
+                <div class="split-bar split-test">150 (15%)</div>
+            </div>
+            <div class="split-legend">
+                <div class="split-legend-item">
+                    <div class="split-legend-dot" style="background: #3b82f6;"></div>
+                    <span>Training</span>
+                </div>
+                <div class="split-legend-item">
+                    <div class="split-legend-dot" style="background: #22c55e;"></div>
+                    <span>Validation</span>
+                </div>
+                <div class="split-legend-item">
+                    <div class="split-legend-dot" style="background: #f59e0b;"></div>
+                    <span>Test</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card wide">
+            <h3>Length Statistics</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Question</th>
+                        <th>Answer</th>
+                        <th>Context</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Average Length (chars)</td>
+                        <td>78.4</td>
+                        <td>245.2</td>
+                        <td>512.8</td>
+                    </tr>
+                    <tr>
+                        <td>Min Length</td>
+                        <td>24</td>
+                        <td>45</td>
+                        <td>128</td>
+                    </tr>
+                    <tr>
+                        <td>Max Length</td>
+                        <td>186</td>
+                        <td>892</td>
+                        <td>2048</td>
+                    </tr>
+                    <tr>
+                        <td>Std Deviation</td>
+                        <td>32.1</td>
+                        <td>156.4</td>
+                        <td>384.2</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Roneira Document Intelligence System | AI Developer Roadmap Level 1</p>
+    </div>
+
+    <script>
+        new Chart(document.getElementById('difficultyChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Easy (40%)', 'Medium (40%)', 'Hard (20%)'],
+                datasets: [{
+                    data: [400, 400, 200],
+                    backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: '#94a3b8', padding: 12, usePointStyle: true }
+                    }
+                }
+            }
+        });
+
+        new Chart(document.getElementById('typeChart'), {
+            type: 'bar',
+            data: {
+                labels: ['Factual', 'Inferential', 'Analytical', 'Multi-hop', 'Comparison'],
+                datasets: [{
+                    label: 'Count',
+                    data: [350, 280, 180, 120, 70],
+                    backgroundColor: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#22c55e'],
+                    borderRadius: 6,
+                    barThickness: 24
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#64748b' },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    },
+                    x: {
+                        ticks: { color: '#94a3b8', font: { size: 10 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

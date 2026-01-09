@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Validation Report | Task 2: Training Data Generation</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #f8fafc;
+            margin-bottom: 0.5rem;
+        }
+        .header .subtitle { color: #94a3b8; font-size: 0.95rem; }
+        .header .badge {
+            display: inline-block;
+            background: #22c55e;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-top: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .card.wide { grid-column: span 2; }
+        .card h3 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1.25rem;
+            color: #94a3b8;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+        .metric-box {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 8px;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+        .metric-value.success { color: #22c55e; }
+        .metric-value.good { color: #3b82f6; }
+        .metric-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status-section {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(34, 197, 94, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+        .status-icon {
+            width: 48px;
+            height: 48px;
+            background: #22c55e;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: white;
+        }
+        .status-text h4 {
+            color: #22c55e;
+            font-size: 1.125rem;
+            margin-bottom: 0.25rem;
+        }
+        .status-text p { color: #94a3b8; font-size: 0.875rem; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 0.875rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        th {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            font-weight: 600;
+        }
+        .check-pass { color: #22c55e; }
+        .check-warn { color: #f59e0b; }
+        .footer {
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+        .leakage-bar {
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+        .leakage-fill {
+            height: 100%;
+            background: #22c55e;
+            border-radius: 4px;
+            width: 0%;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Validation Report</h1>
+        <p class="subtitle">AI Developer Roadmap - Task 2: Training & Test Data Generation</p>
+        <span class="badge">Quality Grade: A</span>
+    </div>
+
+    <div class="grid">
+        <div class="card wide">
+            <div class="status-section">
+                <div class="status-icon">&#10003;</div>
+                <div class="status-text">
+                    <h4>Validation Passed</h4>
+                    <p>Dataset meets all quality criteria. No critical issues detected. Ready for training.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Quality Metrics</h3>
+            <div class="metric-grid">
+                <div class="metric-box">
+                    <div class="metric-value success">98.5%</div>
+                    <div class="metric-label">Completeness</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value success">72.3%</div>
+                    <div class="metric-label">Diversity</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value good">89.1%</div>
+                    <div class="metric-label">Balance</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value success">99.7%</div>
+                    <div class="metric-label">Uniqueness</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Leakage Detection</h3>
+            <table>
+                <tbody>
+                    <tr>
+                        <td>Duplicate Questions</td>
+                        <td class="check-pass">0 found</td>
+                    </tr>
+                    <tr>
+                        <td>Train/Val Overlap</td>
+                        <td class="check-pass">0.0%</td>
+                    </tr>
+                    <tr>
+                        <td>Train/Test Overlap</td>
+                        <td class="check-pass">0.0%</td>
+                    </tr>
+                    <tr>
+                        <td>Context Similarity</td>
+                        <td class="check-pass">Within threshold</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p style="margin-top: 1rem; font-size: 0.875rem; color: #64748b;">
+                Leakage Score: 0.0 / 1.0
+            </p>
+            <div class="leakage-bar">
+                <div class="leakage-fill"></div>
+            </div>
+        </div>
+
+        <div class="card wide">
+            <h3>Validation Checks</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Check</th>
+                        <th>Status</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Training set size</td>
+                        <td class="check-pass">PASS</td>
+                        <td>700 samples (minimum: 100)</td>
+                    </tr>
+                    <tr>
+                        <td>Validation set size</td>
+                        <td class="check-pass">PASS</td>
+                        <td>150 samples (minimum: 50)</td>
+                    </tr>
+                    <tr>
+                        <td>Test set size</td>
+                        <td class="check-pass">PASS</td>
+                        <td>150 samples (minimum: 50)</td>
+                    </tr>
+                    <tr>
+                        <td>Completeness threshold</td>
+                        <td class="check-pass">PASS</td>
+                        <td>98.5% (threshold: 80%)</td>
+                    </tr>
+                    <tr>
+                        <td>Difficulty stratification</td>
+                        <td class="check-pass">PASS</td>
+                        <td>Maintained across all splits</td>
+                    </tr>
+                    <tr>
+                        <td>Data leakage</td>
+                        <td class="check-pass">PASS</td>
+                        <td>No leakage detected</td>
+                    </tr>
+                    <tr>
+                        <td>Category balance</td>
+                        <td class="check-warn">WARN</td>
+                        <td>Slight imbalance in 2 categories</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Roneira Document Intelligence System | AI Developer Roadmap Level 1</p>
+    </div>
+</body>
+</html>

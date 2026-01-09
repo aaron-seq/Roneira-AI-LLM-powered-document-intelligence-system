@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generated QA Pairs | Task 2: Training Data Generation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #f8fafc;
+            margin-bottom: 0.5rem;
+        }
+        .header .subtitle { color: #94a3b8; font-size: 0.95rem; }
+        .header .badge {
+            display: inline-block;
+            background: #8b5cf6;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-top: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat-card {
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 10px;
+            padding: 1.25rem;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 0.25rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .qa-grid {
+            display: grid;
+            gap: 1rem;
+        }
+        .qa-card {
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .qa-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .qa-id {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #64748b;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+        .qa-tags {
+            display: flex;
+            gap: 0.5rem;
+            margin-left: auto;
+        }
+        .tag {
+            padding: 0.25rem 0.625rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .tag-easy { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+        .tag-medium { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+        .tag-hard { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .tag-factual { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+        .tag-inferential { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
+        .tag-analytical { background: rgba(236, 72, 153, 0.2); color: #f472b6; }
+        .qa-content { margin-bottom: 1rem; }
+        .qa-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            margin-bottom: 0.5rem;
+        }
+        .qa-question {
+            font-size: 1rem;
+            color: #f8fafc;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+        .qa-answer {
+            font-size: 0.9375rem;
+            color: #cbd5e1;
+            line-height: 1.6;
+            background: rgba(15, 23, 42, 0.6);
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 3px solid #22c55e;
+        }
+        .qa-context {
+            font-size: 0.875rem;
+            color: #94a3b8;
+            line-height: 1.5;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 0.875rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-style: italic;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Generated QA Pairs</h1>
+        <p class="subtitle">AI Developer Roadmap - Task 2: Training & Test Data Generation</p>
+        <span class="badge">Synthetic Data Generator</span>
+    </div>
+
+    <div class="container">
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value">1,000</div>
+                <div class="stat-label">Total Pairs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">400</div>
+                <div class="stat-label">Easy</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">400</div>
+                <div class="stat-label">Medium</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">200</div>
+                <div class="stat-label">Hard</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">50</div>
+                <div class="stat-label">Edge Cases</div>
+            </div>
+        </div>
+
+        <div class="qa-grid">
+            <div class="qa-card">
+                <div class="qa-header">
+                    <span class="qa-id">qa_20260108_000001</span>
+                    <div class="qa-tags">
+                        <span class="tag tag-easy">Easy</span>
+                        <span class="tag tag-factual">Factual</span>
+                    </div>
+                </div>
+                <div class="qa-content">
+                    <div class="qa-label">Question</div>
+                    <div class="qa-question">What are the key features of document intelligence systems?</div>
+                    <div class="qa-label">Answer</div>
+                    <div class="qa-answer">Document intelligence systems feature automated content extraction, semantic understanding through NLP, intelligent categorization, and integration with enterprise workflows. They leverage AI/ML to process structured and unstructured documents at scale.</div>
+                    <div class="qa-context">Source: Document intelligence systems provide automated extraction of content from various document formats, enabling semantic understanding and intelligent categorization for enterprise-grade processing.</div>
+                </div>
+            </div>
+
+            <div class="qa-card">
+                <div class="qa-header">
+                    <span class="qa-id">qa_20260108_000042</span>
+                    <div class="qa-tags">
+                        <span class="tag tag-medium">Medium</span>
+                        <span class="tag tag-inferential">Inferential</span>
+                    </div>
+                </div>
+                <div class="qa-content">
+                    <div class="qa-label">Question</div>
+                    <div class="qa-question">How does RAG improve the accuracy of LLM responses compared to standalone models?</div>
+                    <div class="qa-label">Answer</div>
+                    <div class="qa-answer">RAG improves LLM accuracy by grounding responses in retrieved factual content from a knowledge base. This reduces hallucinations, provides up-to-date information, and enables domain-specific expertise without fine-tuning the base model.</div>
+                    <div class="qa-context">Source: Retrieval-Augmented Generation combines the generative capabilities of large language models with precise information retrieval from curated document collections.</div>
+                </div>
+            </div>
+
+            <div class="qa-card">
+                <div class="qa-header">
+                    <span class="qa-id">qa_20260108_000187</span>
+                    <div class="qa-tags">
+                        <span class="tag tag-hard">Hard</span>
+                        <span class="tag tag-analytical">Analytical</span>
+                    </div>
+                </div>
+                <div class="qa-content">
+                    <div class="qa-label">Question</div>
+                    <div class="qa-question">Compare and contrast vector similarity search with keyword-based search for document retrieval in enterprise applications.</div>
+                    <div class="qa-label">Answer</div>
+                    <div class="qa-answer">Vector similarity search uses semantic embeddings to find conceptually related documents regardless of exact keyword matches, enabling understanding of synonyms and context. Keyword search is faster and more interpretable but misses semantic relationships. Hybrid approaches combining both yield optimal results for enterprise RAG systems.</div>
+                    <div class="qa-context">Source: Enterprise search systems must balance precision, recall, and latency. Vector databases enable semantic search while traditional indexes provide exact match capabilities.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Roneira Document Intelligence System | AI Developer Roadmap Level 1</p>
+    </div>
+</body>
+</html>
