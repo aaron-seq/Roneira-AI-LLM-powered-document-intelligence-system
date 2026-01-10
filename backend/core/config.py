@@ -6,7 +6,7 @@ import os
 from functools import lru_cache
 from typing import List
 from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic import Field, field_validator, ConfigDict
 
 
 class Settings(BaseSettings):
@@ -64,8 +64,10 @@ class Settings(BaseSettings):
         default=["localhost", "127.0.0.1", "*"], env="ALLOWED_HOSTS"
     )
 
-    @validator("allowed_origins", "allowed_hosts", pre=True)
+    @field_validator("allowed_origins", "allowed_hosts", mode="before")
+    @classmethod
     def parse_cors_lists(cls, v):
+        """Parse comma-separated strings into lists for CORS config."""
         if isinstance(v, str):
             return [i.strip() for i in v.split(",")]
         return v
@@ -75,9 +77,11 @@ class Settings(BaseSettings):
         """Check if Ollama is configured"""
         return bool(self.ollama_base_url and self.ollama_model)
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 @lru_cache()
