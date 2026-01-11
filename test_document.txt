@@ -1,0 +1,39 @@
+# AI Document Intelligence System - Test Document
+
+## Executive Summary
+
+This document provides an overview of the AI-powered document intelligence system designed for enterprise use. The system leverages advanced machine learning models including Large Language Models (LLMs) and Retrieval-Augmented Generation (RAG) to extract, analyze, and process documents.
+
+## Key Features
+
+1. **Document Processing**: Automated extraction of text, tables, and images from PDFs, Word documents, and images.
+
+2. **AI Analysis**: Integration with local Ollama LLM (Llama 3.2) for intelligent document understanding and summarization.
+
+3. **Semantic Search**: Vector-based search using sentence-transformers for finding relevant information across document collections.
+
+4. **Real-time Updates**: WebSocket integration for live processing status updates.
+
+## Technical Architecture
+
+The system consists of:
+- FastAPI backend with async processing
+- ChromaDB vector store for embeddings
+- Ollama for local LLM inference
+- SQLite/PostgreSQL for metadata storage
+- Redis for caching (optional)
+
+## Contact Information
+
+For more information, contact:
+- Email: support@example.com
+- Phone: +1-555-123-4567
+- Address: 123 Tech Street, Silicon Valley, CA 94025
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | 2024-01-01 | Initial release |
+| 2.0.0 | 2025-01-01 | Added RAG capabilities |
+| 2.1.0 | 2026-01-11 | Ollama LLM integration |
