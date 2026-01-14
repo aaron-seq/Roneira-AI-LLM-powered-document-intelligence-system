@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task 4: Agent Pipeline Workflow</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 24px;
+            color: #e0e0e0;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 24px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 { font-size: 28px; margin-bottom: 8px; color: #fff; }
+        .header p { color: #9ca3af; }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-card .stat-value { font-size: 32px; font-weight: 700; color: #4285f4; }
+        .stat-card .stat-label { font-size: 14px; color: #9ca3af; margin-top: 4px; }
+        .pipeline-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .pipeline-container h2 { margin-bottom: 24px; color: #fff; text-align: center; }
+        .pipeline {
+            display: flex;
+            justify-content: space-between;
+            align-items: stretch;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .agent-card {
+            flex: 1;
+            min-width: 180px;
+            position: relative;
+        }
+        .agent-header {
+            padding: 12px 16px;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .agent-number {
+            background: rgba(255,255,255,0.2);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .agent-name { font-weight: 600; color: #fff; }
+        .agent-body {
+            background: rgba(255,255,255,0.03);
+            padding: 16px;
+            border-radius: 0 0 12px 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-top: none;
+        }
+        .agent-desc { font-size: 13px; color: #9ca3af; margin-bottom: 16px; }
+        .agent-stats { display: flex; gap: 16px; margin-bottom: 12px; }
+        .stat { text-align: center; }
+        .stat .stat-value { font-size: 18px; font-weight: 600; color: #fff; display: block; }
+        .stat .stat-label { font-size: 11px; color: #6b7280; }
+        .progress-bar {
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill { height: 100%; transition: width 0.3s; }
+        .arrow {
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 24px;
+            color: #4285f4;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Multi-Agent Pipeline Workflow</h1>
+            <p>Task 4: Model Integration - Orchestrating specialized agents for RAG processing</p>
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-value">6</div>
+                <div class="stat-label">Total Agents</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">985ms</div>
+                <div class="stat-label">Total Pipeline Time</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">0.92</div>
+                <div class="stat-label">Avg Confidence</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">3</div>
+                <div class="stat-label">Max Iterations</div>
+            </div>
+        </div>
+
+        <div class="pipeline-container">
+            <h2>Agent Execution Flow</h2>
+            <div class="pipeline">
+                
+        <div class="agent-card">
+            <div class="agent-header" style="background: #4285f4">
+                <span class="agent-number">1</span>
+                <span class="agent-name">Router Agent</span>
+            </div>
+            <div class="agent-body">
+                <p class="agent-desc">Query classification and routing</p>
+                <div class="agent-stats">
+                    <div class="stat">
+                        <span class="stat-value">45ms</span>
+                        <span class="stat-label">Execution Time</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value">4.6%</span>
+                        <span class="stat-label">Pipeline Share</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 4.568527918781726%; background: #4285f4"></div>
+                </div>
+            </div>
+            <div class="arrow">→</div>
+        </div>
+        <div class="agent-card">
+            <div class="agent-header" style="background: #34a853">
+                <span class="agent-number">2</span>
+                <span class="agent-name">Retriever Agent</span>
+            </div>
+            <div class="agent-body">
+                <p class="agent-desc">Document search and retrieval</p>
+                <div class="agent-stats">
+                    <div class="stat">
+                        <span class="stat-value">230ms</span>
+                        <span class="stat-label">Execution Time</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value">23.4%</span>
+                        <span class="stat-label">Pipeline Share</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 23.3502538071066%; background: #34a853"></div>
+                </div>
+            </div>
+            <div class="arrow">→</div>
+        </div>
+        <div class="agent-card">
+            <div class="agent-header" style="background: #fbbc05">
+                <span class="agent-number">3</span>
+                <span class="agent-name">Reranker Agent</span>
+            </div>
+            <div class="agent-body">
+                <p class="agent-desc">Relevance scoring and reordering</p>
+                <div class="agent-stats">
+                    <div class="stat">
+                        <span class="stat-value">85ms</span>
+                        <span class="stat-label">Execution Time</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value">8.6%</span>
+                        <span class="stat-label">Pipeline Share</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 8.629441624365482%; background: #fbbc05"></div>
+                </div>
+            </div>
+            <div class="arrow">→</div>
+        </div>
+        <div class="agent-card">
+            <div class="agent-header" style="background: #ea4335">
+                <span class="agent-number">4</span>
+                <span class="agent-name">Synthesizer Agent</span>
+            </div>
+            <div class="agent-body">
+                <p class="agent-desc">Response generation with LLM</p>
+                <div class="agent-stats">
+                    <div class="stat">
+                        <span class="stat-value">450ms</span>
+                        <span class="stat-label">Execution Time</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value">45.7%</span>
+                        <span class="stat-label">Pipeline Share</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 45.68527918781726%; background: #ea4335"></div>
+                </div>
+            </div>
+            <div class="arrow">→</div>
+        </div>
+        <div class="agent-card">
+            <div class="agent-header" style="background: #9c27b0">
+                <span class="agent-number">5</span>
+                <span class="agent-name">Validator Agent</span>
+            </div>
+            <div class="agent-body">
+                <p class="agent-desc">Output quality verification</p>
+                <div class="agent-stats">
+                    <div class="stat">
+                        <span class="stat-value">120ms</span>
+                        <span class="stat-label">Execution Time</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value">12.2%</span>
+                        <span class="stat-label">Pipeline Share</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 12.18274111675127%; background: #9c27b0"></div>
+                </div>
+            </div>
+            <div class="arrow">→</div>
+        </div>
+        <div class="agent-card">
+            <div class="agent-header" style="background: #00bcd4">
+                <span class="agent-number">6</span>
+                <span class="agent-name">Reflector Agent</span>
+            </div>
+            <div class="agent-body">
+                <p class="agent-desc">Self-improvement feedback</p>
+                <div class="agent-stats">
+                    <div class="stat">
+                        <span class="stat-value">55ms</span>
+                        <span class="stat-label">Execution Time</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-value">5.6%</span>
+                        <span class="stat-label">Pipeline Share</span>
+                    </div>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 5.583756345177665%; background: #00bcd4"></div>
+                </div>
+            </div>
+            
+        </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

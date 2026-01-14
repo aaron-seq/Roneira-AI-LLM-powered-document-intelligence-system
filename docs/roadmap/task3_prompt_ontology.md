@@ -290,8 +290,69 @@ graph LR
 4. **Export Flexibility**: JSON and RDF export for interoperability
 5. **Prompt Integration**: Ontology-aware prompts for better reasoning
 
-## References
+---
 
-- [OWL Web Ontology Language](https://www.w3.org/OWL/)
+## My Understanding
+
+### How We Did It
+
+**Step 1: Defined the Ontology Structure**
+We created a graph-based knowledge representation with:
+- `OntologyNode` - Represents entities, concepts, categories, attributes, and actions
+- `OntologyRelation` - Connects nodes with typed relationships (is_a, part_of, relates_to, etc.)
+- `KnowledgeOntology` - The main class managing nodes and relations
+
+**Step 2: Built the Node Type System**
+We identified 5 key node types for document intelligence:
+- **Entity**: Named real-world objects (Person, Organization, Location)
+- **Concept**: Abstract ideas (Machine Learning, RAG, Embedding)
+- **Category**: Grouping classifications (Document Types)
+- **Attribute**: Properties (Size, Date, Author)
+- **Action**: Operations (Extract, Analyze, Summarize)
+
+**Step 3: Implemented Relationship Traversal**
+The ontology supports graph traversal to find:
+- Related concepts within N hops (`find_related_concepts`)
+- Paths between concepts (`find_path`)
+- Inheritance chains (`get_ancestors`, `get_descendants`)
+
+**Step 4: Integrated with RAG Pipeline**
+We enhanced the prompt service with ontology-aware templates that:
+- Expand queries with related concepts
+- Enrich context with semantic information
+- Validate answers against ontology constraints
+
+### What We Learned
+
+1. **Ontologies vs. Knowledge Graphs**: Ontologies define the schema (what types exist), while knowledge graphs contain instances. We implemented a lightweight ontology that can grow into a full KG.
+
+2. **Relationship Types Matter**: Different relationship types (is_a vs. part_of vs. depends_on) enable different reasoning patterns. Inheritance (`is_a`) supports type inference; composition (`part_of`) supports aggregation.
+
+3. **Prompt Engineering**: Ontology context in prompts helps LLMs make more accurate inferences by providing domain-specific semantic constraints.
+
+4. **Graph vs. Tree**: While we started with a tree-based hierarchy, real-world concepts have multiple relationships. A graph structure is more flexible.
+
+5. **Export Interoperability**: Supporting JSON and RDF/Turtle exports enables integration with existing knowledge management tools.
+
+### Challenges Faced
+
+1. **Circular References**: Graphs can have cycles. We added visited tracking in traversal algorithms.
+
+2. **Confidence Scoring**: Not all relationships are equally certain. We added a `confidence` field (0-1) to relations.
+
+3. **Context Size Limits**: Ontology context can be large. We implemented selective context (depth-limited traversal).
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| UUID-based node IDs | Avoid collisions, support merging |
+| Confidence on relations | Handle uncertain relationships |
+| Lazy loading | Build ontology incrementally |
+| Template-based prompts | Flexible ontology integration |
+
+---
+
+## References
 - [Knowledge Graph Best Practices](https://arxiv.org/abs/2003.02320)
 - [Prompt Engineering Guide](https://www.promptingguide.ai/)

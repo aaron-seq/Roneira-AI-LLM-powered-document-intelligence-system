@@ -1,0 +1,62 @@
+[
+  {
+    "test": "API Health Check",
+    "passed": false,
+    "details": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=5)"
+  },
+  {
+    "test": "Document List",
+    "passed": true,
+    "details": "Count: 10"
+  },
+  {
+    "test": "Document Download",
+    "passed": true,
+    "details": "Size: 1060 bytes"
+  },
+  {
+    "test": "RAG: HR Policy Query",
+    "passed": true,
+    "details": "Sources: 3, Response: According to [Document: hr_2024_001.pdf], the Paid..."
+  },
+  {
+    "test": "RAG: Invoice Query",
+    "passed": false,
+    "details": "Sources: 0, Response: I cannot find information about invoice details in..."
+  },
+  {
+    "test": "RAG: Engineering Query",
+    "passed": true,
+    "details": "Sources: 3, Response: According to [Document: eng_specs_nextgen_robotics..."
+  },
+  {
+    "test": "RAG: Chitchat Handling",
+    "passed": false,
+    "details": "Sources: 1, Response: I'm functioning within optimal parameters, ready t..."
+  },
+  {
+    "test": "RAG: Greeting Handling",
+    "passed": true,
+    "details": "Sources: 0, Response: Hello! It's nice to meet you. How can I assist you..."
+  },
+  {
+    "test": "RAG: Missing Information",
+    "passed": true,
+    "details": "Sources: 0, Response: I cannot find information about the address of Ent..."
+  },
+  {
+    "test": "RAG: Empty Query",
+    "passed": true,
+    "details": "Sources: 0, Response: I'm here to help. How can I assist you today?..."
+  },
+  {
+    "test": "Invalid Document ID",
+    "passed": false,
+    "details": "Status: 500"
+  },
+  {
+    "test": "Malformed Query Request",
+    "passed": true,
+    "details": "Status: 422"
+  }
+]

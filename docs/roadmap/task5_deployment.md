@@ -341,19 +341,24 @@ sequenceDiagram
 
 ## Screenshots
 
-> **Note**: Screenshots will be captured from GitHub Actions workflow runs.
+> **Note**: Screenshots captured from implementation demonstration.
 
 ### Screenshot 1: CI/CD Pipeline Dashboard
-*[Placeholder for GitHub Actions workflow visualization]*
+
+![CI/CD Pipeline Dashboard](screenshots/task5_pipeline.png)
 
 ### Screenshot 2: Deployment Logs
-*[Placeholder for deployment logs screenshot]*
+
+![Pipeline Run History](screenshots/task5_history.png)
 
 ### Screenshot 3: Health Check Dashboard
-*[Placeholder for monitoring dashboard]*
+
+![Deployment Metrics Dashboard](screenshots/task5_metrics.png)
 
 ### Screenshot 4: Performance Metrics
-*[Placeholder for K6 performance test results]*
+
+![K6 Performance Test Results](screenshots/task5_performance.png)
+
 
 ## Key Takeaways
 
@@ -363,9 +368,65 @@ sequenceDiagram
 4. **Observability**: Comprehensive monitoring and alerting
 5. **Multi-Platform**: Supports Railway, Render, and Vercel
 
-## References
+---
 
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+## My Understanding
+
+### How We Did It
+
+**Step 1: Analyzed Existing Pipeline**
+We studied the existing GitHub Actions workflow to understand the CI/CD stages: code quality, testing, building, and deployment.
+
+**Step 2: Documented Deployment Stages**
+We broke down the pipeline into clear stages:
+1. Code Quality (Black, isort, Flake8, MyPy, Bandit)
+2. Testing (Unit + Integration with service dependencies)
+3. Build (Docker image creation)
+4. Staging Deployment (Railway)
+5. Production Deployment (Render/Vercel)
+
+**Step 3: Created Validation Checkpoints**
+We added health check endpoints and smoke tests to validate deployments before promoting to production.
+
+**Step 4: Documented Rollback Procedures**
+We created clear rollback procedures for each deployment platform (Railway, Docker, Kubernetes).
+
+**Step 5: Set Up Monitoring**
+We defined metrics, alerts, and observability requirements.
+
+### What We Learned
+
+1. **Health Checks are Essential**: Both liveness (`/health`) and readiness (`/health/ready`) endpoints serve different purposes. Liveness checks if the process is running; readiness checks if dependencies (DB, Redis) are available.
+
+2. **Environment Parity**: Staging should mirror production as closely as possible. Different configurations lead to "works on staging" bugs.
+
+3. **Rollback Speed Matters**: The faster you can rollback, the less impact an issue has. Automated rollback on health check failure is ideal.
+
+4. **Feature Flags**: Allow deploying code without activating features. This separates deployment from release.
+
+5. **Observability First**: If you can't see what's happening, you can't fix it. Logging, metrics, and tracing should be set up before deployment.
+
+### Challenges Faced
+
+1. **Service Dependencies**: Tests need Redis and Postgres. We used GitHub Actions service containers.
+
+2. **Secret Management**: Different secrets for staging vs production. We used GitHub Environments.
+
+3. **Cache Invalidation**: Docker layer caching can cause stale deployments. We use commit SHA tags.
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Docker-based deployment | Consistent across environments |
+| Separate staging environment | Safe testing before production |
+| Auto-rollback on failure | Minimize downtime |
+| Health check timeout | Catch slow startup issues |
+| P50/P95/P99 latency metrics | Understand full latency distribution |
+
+---
+
+## References
 - [Railway Deployment Guide](https://docs.railway.app/)
 - [Render Deployment](https://render.com/docs)
 - [K6 Performance Testing](https://k6.io/docs/)

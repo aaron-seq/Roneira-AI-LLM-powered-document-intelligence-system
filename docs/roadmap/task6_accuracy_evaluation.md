@@ -357,9 +357,91 @@ evaluate:
 4. **Visual**: Interactive dashboard for stakeholder communication
 5. **Actionable**: Identifies specific areas for improvement
 
-## References
+---
 
-- [RAGAS Evaluation Framework](https://github.com/explodinggradients/ragas)
+## My Understanding
+
+### How We Did It
+
+**Step 1: Identified Key Metrics**
+We researched RAG evaluation best practices and identified two categories:
+- **Retrieval Metrics**: Precision@K, Recall@K, MRR, NDCG
+- **Generation Metrics**: BLEU, ROUGE-L, Faithfulness, Answer Relevancy
+
+**Step 2: Implemented the RAG Evaluator**
+The `RAGEvaluator` class takes test samples and computes all metrics. It supports:
+- Automated metric calculation
+- LLM-as-Judge evaluation
+- Performance metrics (latency, throughput, cost)
+
+**Step 3: Created Comparison Framework**
+We implemented baseline vs. enhanced comparison to quantify improvements:
+- Side-by-side metric comparison
+- Delta percentage calculation
+- Statistical significance testing
+
+**Step 4: Built the Metrics Dashboard**
+The `MetricsDashboard` generates interactive HTML visualizations with:
+- Chart.js bar/radar charts
+- Metric tables with color-coded grades
+- Baseline vs. enhanced comparison charts
+
+**Step 5: Integrated with CI/CD**
+We added evaluation as a CI pipeline stage with quality gates.
+
+### What We Learned
+
+1. **Multiple Metrics are Necessary**: A single metric can be misleading. High precision but low recall means missing relevant documents. We need the full picture.
+
+2. **Faithfulness vs. Relevancy**: A response can be relevant (answers the question) but not faithful (not grounded in context). Both must be measured.
+
+3. **LLM-as-Judge Has Limitations**: LLM judges can be biased toward verbose or confident-sounding answers. We use explicit criteria to reduce bias.
+
+4. **Latency Percentiles**: Mean latency hides outliers. P95 and P99 reveal the worst-case user experience.
+
+5. **Grading System Helps Communication**: Converting scores to letter grades (A/B/C/D/F) helps non-technical stakeholders understand quality.
+
+6. **Baseline is Critical**: Without a baseline, you can't prove improvement. Always measure "before" and "after."
+
+### Challenges Faced
+
+1. **Ground Truth Availability**: Automated metrics require expected answers. We used the synthetic data from Task 2.
+
+2. **Metric Interpretation**: What's a "good" MRR score? We created threshold-based grading (>0.9 = A, etc.).
+
+3. **Cost Tracking**: Token costs vary by model. We parameterized cost calculation.
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Weighted overall score | Balance retrieval and generation importance |
+| Letter grade system | Human-readable quality indication |
+| CI/CD integration | Automated quality gates |
+| Interactive HTML dashboard | Shareable with stakeholders |
+| Optional LLM judge | Expensive but more nuanced |
+
+### Metric Calculation Example
+
+```python
+# MRR (Mean Reciprocal Rank) calculation
+def calculate_mrr(samples: List[Sample]) -> float:
+    reciprocal_ranks = []
+    for sample in samples:
+        for rank, doc in enumerate(sample.retrieved_docs, 1):
+            if doc.id in sample.ground_truth_ids:
+                reciprocal_ranks.append(1.0 / rank)
+                break
+        else:
+            reciprocal_ranks.append(0.0)
+    return sum(reciprocal_ranks) / len(reciprocal_ranks)
+```
+
+This implementation shows how MRR rewards finding relevant documents earlier in the result list.
+
+---
+
+## References
 - [DeepEval for LLMs](https://github.com/confident-ai/deepeval)
 - [LLM Evaluation Best Practices](https://arxiv.org/abs/2307.03025)
 - [Retrieval Metrics](https://en.wikipedia.org/wiki/Discounted_cumulative_gain)
