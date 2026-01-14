@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task 5: CI/CD Pipeline Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 24px;
+            color: #e0e0e0;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 24px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 { font-size: 28px; margin-bottom: 8px; color: #fff; }
+        .header p { color: #9ca3af; }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-value { font-size: 32px; font-weight: 700; color: #34a853; }
+        .stat-label { font-size: 14px; color: #9ca3af; margin-top: 4px; }
+        .pipeline-container {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .pipeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .pipeline-header h2 { color: #fff; }
+        .pipeline-info { color: #9ca3af; font-size: 14px; }
+        .pipeline {
+            display: flex;
+            align-items: stretch;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 16px;
+        }
+        .stage-card {
+            min-width: 160px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
+        }
+        .stage-card.success { border-left: 3px solid #34a853; }
+        .stage-card.running { border-left: 3px solid #fbbc05; }
+        .stage-card.failed { border-left: 3px solid #ea4335; }
+        .stage-header {
+            padding: 16px;
+            background: rgba(255,255,255,0.03);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .stage-icon { font-size: 28px; }
+        .stage-name { font-weight: 600; color: #fff; font-size: 13px; text-align: center; }
+        .stage-time { font-size: 12px; color: #9ca3af; }
+        .stage-checks {
+            padding: 12px;
+        }
+        .check-item {
+            font-size: 11px;
+            color: #34a853;
+            margin-bottom: 4px;
+        }
+        .stage-status {
+            padding: 12px;
+            text-align: center;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+        }
+        .status-badge.success { background: rgba(52,168,83,0.2); color: #34a853; }
+        .status-badge.running { background: rgba(251,188,5,0.2); color: #fbbc05; }
+        .status-badge.failed { background: rgba(234,67,53,0.2); color: #ea4335; }
+        .connector {
+            display: flex;
+            align-items: center;
+            font-size: 20px;
+            color: #4285f4;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CI/CD Pipeline Dashboard</h1>
+            <p>Task 5: Deployment via Existing Pipeline - Automated build and deployment workflow</p>
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-value">7</div>
+                <div class="stat-label">Pipeline Stages</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">10m 19s</div>
+                <div class="stat-label">Total Duration</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">98.5%</div>
+                <div class="stat-label">Success Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">v1.2.3</div>
+                <div class="stat-label">Current Version</div>
+            </div>
+        </div>
+
+        <div class="pipeline-container">
+            <div class="pipeline-header">
+                <h2>Pipeline Run #142 - main branch</h2>
+                <span class="pipeline-info">Triggered by push • 5 minutes ago</span>
+            </div>
+            <div class="pipeline">
+                
+        <div class="stage-card success">
+            <div class="stage-header">
+                <span class="stage-icon">🔍</span>
+                <span class="stage-name">Code Quality</span>
+                <span class="stage-time">45s</span>
+            </div>
+            <div class="stage-checks">
+                <div class="check-item">✓ Black</div><div class="check-item">✓ isort</div><div class="check-item">✓ Flake8</div><div class="check-item">✓ MyPy</div>
+            </div>
+            <div class="stage-status">
+                <span class="status-badge success">SUCCESS</span>
+            </div>
+        </div>
+        <div class="connector">→</div>
+        <div class="stage-card success">
+            <div class="stage-header">
+                <span class="stage-icon">🔒</span>
+                <span class="stage-name">Security Scan</span>
+                <span class="stage-time">32s</span>
+            </div>
+            <div class="stage-checks">
+                <div class="check-item">✓ Bandit</div><div class="check-item">✓ Safety</div><div class="check-item">✓ Dependency Check</div>
+            </div>
+            <div class="stage-status">
+                <span class="status-badge success">SUCCESS</span>
+            </div>
+        </div>
+        <div class="connector">→</div>
+        <div class="stage-card success">
+            <div class="stage-header">
+                <span class="stage-icon">🧪</span>
+                <span class="stage-name">Unit Tests</span>
+                <span class="stage-time">2m 15s</span>
+            </div>
+            <div class="stage-checks">
+                <div class="check-item">✓ 87 tests passed</div><div class="check-item">✓ 92% coverage</div>
+            </div>
+            <div class="stage-status">
+                <span class="status-badge success">SUCCESS</span>
+            </div>
+        </div>
+        <div class="connector">→</div>
+        <div class="stage-card success">
+            <div class="stage-header">
+                <span class="stage-icon">🔗</span>
+                <span class="stage-name">Integration Tests</span>
+                <span class="stage-time">3m 42s</span>
+            </div>
+            <div class="stage-checks">
+                <div class="check-item">✓ API tests</div><div class="check-item">✓ DB tests</div><div class="check-item">✓ Service tests</div>
+            </div>
+            <div class="stage-status">
+                <span class="status-badge success">SUCCESS</span>
+            </div>
+        </div>
+        <div class="connector">→</div>
+        <div class="stage-card success">
+            <div class="stage-header">
+                <span class="stage-icon">🐳</span>
+                <span class="stage-name">Docker Build</span>
+                <span class="stage-time">1m 28s</span>
+            </div>
+            <div class="stage-checks">
+                <div class="check-item">✓ Build image</div><div class="check-item">✓ Push to registry</div>
+            </div>
+            <div class="stage-status">
+                <span class="status-badge success">SUCCESS</span>
+            </div>
+        </div>
+        <div class="connector">→</div>
+        <div class="stage-card success">
+            <div class="stage-header">
+                <span class="stage-icon">🚀</span>
+                <span class="stage-name">Deploy Staging</span>
+                <span class="stage-time">1m 05s</span>
+            </div>
+            <div class="stage-checks">
+                <div class="check-item">✓ Railway deploy</div><div class="check-item">✓ Smoke tests</div>
+            </div>
+            <div class="stage-status">
+                <span class="status-badge success">SUCCESS</span>
+            </div>
+        </div>
+        <div class="connector">→</div>
+        <div class="stage-card success">
+            <div class="stage-header">
+                <span class="stage-icon">✅</span>
+                <span class="stage-name">Deploy Production</span>
+                <span class="stage-time">1m 12s</span>
+            </div>
+            <div class="stage-checks">
+                <div class="check-item">✓ Health check</div><div class="check-item">✓ Performance tests</div>
+            </div>
+            <div class="stage-status">
+                <span class="status-badge success">SUCCESS</span>
+            </div>
+        </div>
+        
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Invoice INV-2026-001</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        padding: 40px;
+        background: #fff;
+        color: #1e293b;
+      }
+      .invoice-header {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 40px;
+        padding-bottom: 20px;
+        border-bottom: 3px solid #6366f1;
+      }
+      .company-info h1 {
+        color: #6366f1;
+        font-size: 28px;
+        margin-bottom: 8px;
+      }
+      .company-info p {
+        color: #64748b;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .invoice-meta {
+        text-align: right;
+      }
+      .invoice-meta h2 {
+        color: #0f172a;
+        font-size: 32px;
+        margin-bottom: 12px;
+      }
+      .invoice-meta .invoice-number {
+        font-size: 18px;
+        color: #6366f1;
+        font-weight: 600;
+      }
+      .invoice-meta .date {
+        color: #64748b;
+        margin-top: 8px;
+      }
+      .billing-section {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 40px;
+      }
+      .billing-box {
+        background: #f8fafc;
+        padding: 20px;
+        border-radius: 8px;
+        width: 48%;
+      }
+      .billing-box h3 {
+        color: #6366f1;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 12px;
+      }
+      .billing-box .name {
+        font-size: 18px;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 8px;
+      }
+      .billing-box p {
+        color: #64748b;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 30px;
+      }
+      th {
+        background: #6366f1;
+        color: white;
+        padding: 14px 16px;
+        text-align: left;
+        font-weight: 500;
+      }
+      td {
+        padding: 14px 16px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      tr:nth-child(even) {
+        background: #f8fafc;
+      }
+      .text-right {
+        text-align: right;
+      }
+      .totals {
+        margin-left: auto;
+        width: 320px;
+      }
+      .totals-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .totals-row.total {
+        border-bottom: none;
+        background: #6366f1;
+        color: white;
+        padding: 16px 20px;
+        border-radius: 8px;
+        font-size: 20px;
+        font-weight: 600;
+        margin-top: 10px;
+      }
+      .payment-info {
+        margin-top: 40px;
+        padding: 20px;
+        background: #fef3c7;
+        border-radius: 8px;
+        border-left: 4px solid #f59e0b;
+      }
+      .payment-info h4 {
+        color: #92400e;
+        margin-bottom: 8px;
+      }
+      .payment-info p {
+        color: #78350f;
+        font-size: 14px;
+      }
+      .footer {
+        margin-top: 60px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="invoice-header">
+      <div class="company-info">
+        <h1>TechSolutions Inc.</h1>
+        <p>
+          1234 Innovation Drive, Suite 500<br />
+          San Francisco, CA 94102<br />
+          Phone: (415) 555-0199<br />
+          Email: billing@techsolutions.com
+        </p>
+      </div>
+      <div class="invoice-meta">
+        <h2>INVOICE</h2>
+        <div class="invoice-number">INV-2026-001</div>
+        <div class="date">Date: January 13, 2026</div>
+        <div class="date">Due Date: February 13, 2026</div>
+      </div>
+    </div>
+
+    <div class="billing-section">
+      <div class="billing-box">
+        <h3>Bill To</h3>
+        <div class="name">GlobalRetail Corp.</div>
+        <p>
+          Attn: Accounts Payable<br />
+          789 Commerce Boulevard<br />
+          New York, NY 10001<br />
+          Email: ap@globalretail.com
+        </p>
+      </div>
+      <div class="billing-box">
+        <h3>Ship To</h3>
+        <div class="name">GlobalRetail Corp. - HQ</div>
+        <p>
+          789 Commerce Boulevard<br />
+          Floor 15, Technology Division<br />
+          New York, NY 10001
+        </p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th>Quantity</th>
+          <th>Unit Price</th>
+          <th class="text-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Enterprise Cloud Services - Annual License</td>
+          <td>1</td>
+          <td>$9,500.00</td>
+          <td class="text-right">$9,500.00</td>
+        </tr>
+        <tr>
+          <td>Document Intelligence API - Premium Tier</td>
+          <td>1</td>
+          <td>$3,500.00</td>
+          <td class="text-right">$3,500.00</td>
+        </tr>
+        <tr>
+          <td>24/7 Premium Support Package</td>
+          <td>12 months</td>
+          <td>$200.00</td>
+          <td class="text-right">$2,400.00</td>
+        </tr>
+        <tr>
+          <td>Onboarding & Training Sessions</td>
+          <td>2 sessions</td>
+          <td>$350.00</td>
+          <td class="text-right">$700.00</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div class="totals-row">
+        <span>Subtotal</span>
+        <span>$16,100.00</span>
+      </div>
+      <div class="totals-row">
+        <span>Discount (5%)</span>
+        <span>-$805.00</span>
+      </div>
+      <div class="totals-row">
+        <span>Tax (3%)</span>
+        <span>$458.85</span>
+      </div>
+      <div class="totals-row total">
+        <span>Total Amount Due</span>
+        <span>$15,753.85</span>
+      </div>
+    </div>
+
+    <div class="payment-info">
+      <h4>Payment Information</h4>
+      <p>
+        <strong>Bank:</strong> First National Bank<br />
+        <strong>Account Name:</strong> TechSolutions Inc.<br />
+        <strong>Account Number:</strong> 1234567890<br />
+        <strong>Routing Number:</strong> 021000021<br />
+        Please include invoice number INV-2026-001 in payment reference.
+      </p>
+    </div>
+
+    <div class="footer">
+      <p>
+        Thank you for your business! | TechSolutions Inc. |
+        www.techsolutions.com
+      </p>
+    </div>
+  </body>
+</html>

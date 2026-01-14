@@ -300,8 +300,81 @@ graph LR
 4. **Quality Assurance**: Validator agent ensures response quality
 5. **Observable**: Comprehensive logging and metrics
 
-## References
+---
 
-- [LangGraph Agent Patterns](https://langchain-ai.github.io/langgraph/)
+## My Understanding
+
+### How We Did It
+
+**Step 1: Identified Integration Points**
+We mapped how the new components (Ontology, Data Catalog, Evaluator) connect to existing services (Retrieval, Prompt, Chat, Memory, Guardrails).
+
+**Step 2: Designed the Agent Architecture**
+We implemented a multi-agent system with specialized agents:
+- **Router Agent**: Classifies queries and determines routing
+- **Retriever Agent**: Fetches relevant documents using existing vector store
+- **Reranker Agent**: Re-scores results for relevance
+- **Synthesizer Agent**: Generates responses using chat service
+- **Validator Agent**: Checks response quality using evaluator
+- **Reflector Agent**: Provides feedback for self-improvement
+
+**Step 3: Built the Orchestrator**
+The `AgentOrchestrator` coordinates agent execution:
+1. Receives user query
+2. Routes through appropriate agents
+3. Manages state between agents
+4. Handles errors and retries
+5. Returns final response with confidence
+
+**Step 4: Implemented Feedback Loop**
+If the Validator detects low confidence, the Reflector agent triggers re-generation. This creates a self-improving system.
+
+### What We Learned
+
+1. **Agent State Management**: Each agent needs access to shared state (query, context, response, metadata). We used a `AgentState` dataclass passed between agents.
+
+2. **Dependency Injection**: Agents receive services (retrieval, chat, ontology) via constructor, making them testable and configurable.
+
+3. **Graceful Degradation**: If one agent fails, the orchestrator can skip it and continue. We implemented optional agents and fallback paths.
+
+4. **Observability is Critical**: Logging execution time, success/failure, and outputs for each agent enables debugging and optimization.
+
+5. **Iterative Refinement**: The reflection loop significantly improves response quality for complex queries, but adds latency. We made it configurable.
+
+### Challenges Faced
+
+1. **Agent Ordering**: Some agent orders work better than others. We experimented with different sequences.
+
+2. **Infinite Loops**: The reflection loop could loop forever. We added max iterations (default: 3).
+
+3. **Service Coupling**: Agents became tightly coupled to services. We used interfaces/protocols for loose coupling.
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Protocol-based interfaces | Swap implementations easily |
+| Max 3 reflection iterations | Prevent infinite loops |
+| Async agent execution | Support parallel agents |
+| Comprehensive logging | Debug complex flows |
+| Confidence thresholds | Trigger reflection appropriately |
+
+### Integration Pattern
+
+```python
+# The key integration pattern: dependency injection
+orchestrator = AgentOrchestrator(
+    retrieval_service=existing_retrieval,  # Existing
+    llm_service=existing_chat,              # Existing
+    ontology=new_ontology,                  # New
+    evaluator=new_evaluator,                # New
+)
+```
+
+This pattern allows new components to enhance existing pipelines without modifying original code.
+
+---
+
+## References
 - [Multi-Agent Systems](https://arxiv.org/abs/2308.08155)
 - [ReAct Framework](https://arxiv.org/abs/2210.03629)

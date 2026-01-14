@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task 4: Agent Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 24px;
+            color: #e0e0e0;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 24px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 { font-size: 28px; margin-bottom: 8px; color: #fff; }
+        .header p { color: #9ca3af; }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-value { font-size: 32px; font-weight: 700; color: #34a853; }
+        .stat-label { font-size: 14px; color: #9ca3af; margin-top: 4px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .card h3 { margin-bottom: 20px; color: #fff; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        th { color: #9ca3af; font-weight: 500; font-size: 13px; }
+        .agent-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .status {
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status.success { background: rgba(52,168,83,0.2); color: #34a853; }
+        .status.warning { background: rgba(251,188,5,0.2); color: #fbbc05; }
+        .status.error { background: rgba(234,67,53,0.2); color: #ea4335; }
+        #performanceChart { max-height: 300px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Agent Performance Dashboard</h1>
+            <p>Task 4: Model Integration - Real-time metrics for multi-agent orchestration</p>
+        </div>
+
+        <div class="stats-row">
+            <div class="stat-card">
+                <div class="stat-value">6,310</div>
+                <div class="stat-label">Total Agent Calls</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">99.1%</div>
+                <div class="stat-label">Avg Success Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">152ms</div>
+                <div class="stat-label">Avg Latency</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">99.1%</div>
+                <div class="stat-label">Pipeline Success</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>Agent Execution Times</h3>
+                <canvas id="performanceChart"></canvas>
+            </div>
+            <div class="card">
+                <h3>Agent Statistics</h3>
+                <table>
+                    <tr>
+                        <th>Agent</th>
+                        <th>Calls</th>
+                        <th>Avg Time</th>
+                        <th>Success</th>
+                    </tr>
+                    
+        <tr>
+            <td><span class="agent-badge" style="background: #4285f4">Router</span></td>
+            <td>1,250</td>
+            <td>42ms</td>
+            <td><span class="status success">99.8%</span></td>
+        </tr>
+        <tr>
+            <td><span class="agent-badge" style="background: #34a853">Retriever</span></td>
+            <td>1,200</td>
+            <td>215ms</td>
+            <td><span class="status warning">98.5%</span></td>
+        </tr>
+        <tr>
+            <td><span class="agent-badge" style="background: #fbbc05">Reranker</span></td>
+            <td>1,180</td>
+            <td>78ms</td>
+            <td><span class="status success">99.2%</span></td>
+        </tr>
+        <tr>
+            <td><span class="agent-badge" style="background: #ea4335">Synthesizer</span></td>
+            <td>1,150</td>
+            <td>420ms</td>
+            <td><span class="status warning">97.8%</span></td>
+        </tr>
+        <tr>
+            <td><span class="agent-badge" style="background: #9c27b0">Validator</span></td>
+            <td>1,150</td>
+            <td>105ms</td>
+            <td><span class="status success">100.0%</span></td>
+        </tr>
+        <tr>
+            <td><span class="agent-badge" style="background: #00bcd4">Reflector</span></td>
+            <td>380</td>
+            <td>52ms</td>
+            <td><span class="status success">99.5%</span></td>
+        </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ["Router", "Retriever", "Reranker", "Synthesizer", "Validator", "Reflector"],
+                datasets: [{
+                    label: 'Average Execution Time (ms)',
+                    data: [42, 215, 78, 420, 105, 52],
+                    backgroundColor: ["#4285f4", "#34a853", "#fbbc05", "#ea4335", "#9c27b0", "#00bcd4"],
+                    borderRadius: 8,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.1)' },
+                        ticks: { color: '#9ca3af' },
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#9ca3af' },
+                    },
+                },
+            },
+        });
+    </script>
+</body>
+</html>

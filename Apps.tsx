@@ -23,6 +23,7 @@ import ProtectedRoute from '@/components/Auth/ProtectedRoute';
 const Dashboard = lazy(() => import('@/pages/Dashboard/Dashboard'));
 const DocumentUpload = lazy(() => import('@/pages/DocumentUpload/DocumentUpload'));
 const DocumentViewer = lazy(() => import('@/pages/DocumentViewer/DocumentViewer'));
+const AIChat = lazy(() => import('@/pages/AIChat/AIChat'));
 const Login = lazy(() => import('@/pages/Auth/Login'));
 const NotFound = lazy(() => import('@/pages/NotFound/NotFound'));
 
@@ -44,6 +45,7 @@ function App() {
                       <div className="app">
                         <Routes>
                           <Route path="/login" element={<Suspense fallback={<LoadingSpinner />}><Login /></Suspense>} />
+                          <Route path="/chat" element={<Suspense fallback={<LoadingSpinner />}><AIChat /></Suspense>} />
                           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                             <Route index element={<Navigate to="/dashboard" replace />} />
                             <Route path="dashboard" element={<Suspense fallback={<LoadingSpinner />}><Dashboard /></Suspense>} />
