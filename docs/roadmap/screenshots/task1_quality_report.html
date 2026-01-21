@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Quality Report | Task 1: Data Source Discovery</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #f8fafc;
+            margin-bottom: 0.5rem;
+        }
+        .header .subtitle { color: #94a3b8; font-size: 0.95rem; }
+        .header .badge {
+            display: inline-block;
+            background: #22c55e;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-top: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .card.wide { grid-column: span 2; }
+        .card h3 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1.25rem;
+            color: #94a3b8;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+        .metric-box {
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 8px;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        .metric-value.grade-a { color: #22c55e; }
+        .metric-value.grade-b { color: #3b82f6; }
+        .metric-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .chart-container { height: 180px; position: relative; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 0.875rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        th {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            font-weight: 600;
+        }
+        .progress-bar {
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            height: 6px;
+            overflow: hidden;
+            width: 100px;
+        }
+        .progress-fill { height: 100%; border-radius: 4px; }
+        .status-tag {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .status-success { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+        .status-warning { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+        .status-info { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+        .footer {
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+        .score-display {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2rem;
+        }
+        .score-ring {
+            position: relative;
+            width: 140px;
+            height: 140px;
+        }
+        .score-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        .score-text .value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #22c55e;
+        }
+        .score-text .label {
+            font-size: 0.75rem;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Data Quality Report</h1>
+        <p class="subtitle">AI Developer Roadmap - Task 1: Data Source Discovery</p>
+        <span class="badge">Quality Assessment Complete</span>
+    </div>
+
+    <div class="grid">
+        <div class="card wide">
+            <h3>Quality Dimensions</h3>
+            <div class="metric-grid">
+                <div class="metric-box">
+                    <div class="metric-value grade-a">98.2%</div>
+                    <div class="metric-label">Completeness</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value grade-a">91.5%</div>
+                    <div class="metric-label">Consistency</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value grade-b">85.0%</div>
+                    <div class="metric-label">Accuracy</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value grade-a">94.1%</div>
+                    <div class="metric-label">Validity</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Overall Quality Score</h3>
+            <div class="score-display">
+                <div class="score-ring">
+                    <canvas id="scoreChart"></canvas>
+                    <div class="score-text">
+                        <div class="value">92%</div>
+                        <div class="label">Grade A</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Column Profiles</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Column</th>
+                        <th>Type</th>
+                        <th>Completeness</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>question</td>
+                        <td>string</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%; background: #22c55e;"></div></div></td>
+                    </tr>
+                    <tr>
+                        <td>answer</td>
+                        <td>string</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 98%; background: #22c55e;"></div></div></td>
+                    </tr>
+                    <tr>
+                        <td>context</td>
+                        <td>string</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 95%; background: #3b82f6;"></div></div></td>
+                    </tr>
+                    <tr>
+                        <td>difficulty</td>
+                        <td>enum</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%; background: #22c55e;"></div></div></td>
+                    </tr>
+                    <tr>
+                        <td>category</td>
+                        <td>string</td>
+                        <td><div class="progress-bar"><div class="progress-fill" style="width: 100%; background: #22c55e;"></div></div></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card wide">
+            <h3>Issues and Recommendations</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Issue</th>
+                        <th>Severity</th>
+                        <th>Recommendation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>2% missing context values in training set</td>
+                        <td><span class="status-warning">Low</span></td>
+                        <td>Review null handling for context column during preprocessing</td>
+                    </tr>
+                    <tr>
+                        <td>Imbalanced difficulty distribution (40/40/20)</td>
+                        <td><span class="status-info">Info</span></td>
+                        <td>Consider generating additional hard-difficulty examples</td>
+                    </tr>
+                    <tr>
+                        <td>Schema validation passed for all sources</td>
+                        <td><span class="status-success">Success</span></td>
+                        <td>No action required - all fields conform to expected types</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Roneira Document Intelligence System | AI Developer Roadmap Level 1</p>
+    </div>
+
+    <script>
+        new Chart(document.getElementById('scoreChart'), {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [92, 8],
+                    backgroundColor: ['#22c55e', 'rgba(255,255,255,0.05)'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                cutout: '80%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
