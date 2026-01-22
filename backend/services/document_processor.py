@@ -11,10 +11,14 @@ import logging
 import asyncio
 
 # Document processing imports
-import PyPDF2
+try:
+    import pdfplumber
+except ImportError:
+    import PyPDF2
+
+    pdfplumber = None
 from docx import Document as DocxDocument
-from PIL import Image
-import io
+import re
 
 from backend.core.config import get_settings
 from backend.services.local_llm_service import LocalLLMService
@@ -250,29 +254,54 @@ class DocumentProcessorService:
             return f"Error extracting text: {str(e)}", metadata
 
     async def _extract_from_pdf(self, file_path: str) -> tuple[str, Dict[str, Any]]:
-        """Extract text from PDF file"""
+        """Extract text from PDF file using pdfplumber (better extraction)"""
         text = ""
         metadata = {"pages": 0, "word_count": 0}
 
         try:
-            with open(file_path, "rb") as file:
-                pdf_reader = PyPDF2.PdfReader(file)
-                metadata["pages"] = len(pdf_reader.pages)
+            if pdfplumber:
+                # Use pdfplumber (better for complex PDFs)
+                with pdfplumber.open(file_path) as pdf:
+                    metadata["pages"] = len(pdf.pages)
+                    page_texts = []
+                    for page_num, page in enumerate(pdf.pages):
+                        try:
+                            page_text = page.extract_text() or ""
+                            page_texts.append(
+                                f"--- Page {page_num + 1} ---\n{page_text}"
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to extract text from page {page_num + 1}: {e}"
+                            )
+                            page_texts.append(
+                                f"--- Page {page_num + 1} ---\n[Text extraction failed]"
+                            )
+                    text = "\n".join(page_texts)
+            else:
+                # Fallback to PyPDF2
+                import PyPDF2
 
-                for page_num, page in enumerate(pdf_reader.pages):
-                    try:
-                        page_text = page.extract_text()
-                        text += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to extract text from page {page_num + 1}: {e}"
-                        )
-                        text += (
-                            f"\n--- Page {page_num + 1} ---\n[Text extraction failed]\n"
-                        )
+                with open(file_path, "rb") as file:
+                    pdf_reader = PyPDF2.PdfReader(file)
+                    metadata["pages"] = len(pdf_reader.pages)
+                    for page_num, page in enumerate(pdf_reader.pages):
+                        try:
+                            page_text = page.extract_text() or ""
+                            text += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to extract text from page {page_num + 1}: {e}"
+                            )
+                            text += f"\n--- Page {page_num + 1} ---\n[Text extraction failed]\n"
 
-                metadata["word_count"] = len(text.split())
-                return text.strip(), metadata
+            # Clean up text: remove excessive whitespace while preserving structure
+            text = re.sub(r"[ \t]+", " ", text)  # Multiple spaces/tabs to single space
+            text = re.sub(r"\n{3,}", "\n\n", text)  # Max 2 newlines in a row
+            text = text.strip()
+
+            metadata["word_count"] = len(text.split())
+            return text, metadata
 
         except Exception as e:
             logger.error(f"PDF extraction failed: {e}")
