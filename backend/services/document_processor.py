@@ -18,6 +18,7 @@ import io
 
 from backend.core.config import get_settings
 from backend.services.local_llm_service import LocalLLMService
+from backend.services.retrieval_service import RetrievalService
 
 logger = logging.getLogger(__name__)
 
@@ -28,15 +29,23 @@ class DocumentProcessorService:
     def __init__(self):
         self.settings = get_settings()
         self.llm_service = LocalLLMService()
+        self.retrieval_service = RetrievalService()  # For RAG indexing
         self.processing_status: Dict[str, Dict[str, Any]] = {}
 
     async def initialize(self):
         """Initialize the document processor and LLM service"""
         try:
             await self.llm_service.initialize()
-            logger.info("✅ Document processor with local LLM initialized")
+            await self.retrieval_service.initialize()  # Init vector store
         except Exception as e:
             logger.warning(f"⚠️ Document processor initialized without LLM: {e}")
+
+        if self.llm_service.is_initialized:
+            logger.info("✅ Document processor with local LLM initialized")
+        else:
+            logger.warning(
+                "⚠️ Document processor initialized in BASIC mode (No AI features)"
+            )
 
     async def save_uploaded_file(self, file, document_id: str, user_id: str) -> str:
         """Save uploaded file securely"""
@@ -54,6 +63,17 @@ class DocumentProcessorService:
         logger.info(f"File saved: {file_path}")
         return file_path
 
+    def initialize_status(self, document_id: str, filename: str):
+        """Initialize document status to queued"""
+        self.processing_status[document_id] = {
+            "document_id": document_id,
+            "status": "queued",
+            "progress": 0,
+            "message": "Queued for processing",
+            "filename": filename,
+            "created_at": datetime.utcnow(),
+        }
+
     async def get_document_status(self, document_id: str) -> Optional[Dict[str, Any]]:
         """Get document processing status"""
         return self.processing_status.get(document_id)
@@ -63,17 +83,30 @@ class DocumentProcessorService:
         document_id: str,
         file_path: str,
         options: Dict[str, Any],
+        filename: str = "unknown",
         progress_callback: Optional[Callable] = None,
     ):
         """Process document with local LLM analysis"""
         try:
-            # Initialize processing status
-            self.processing_status[document_id] = {
-                "document_id": document_id,
-                "status": "processing",
-                "progress": {"progress": 10, "current_stage": "Extracting text"},
-                "created_at": datetime.utcnow(),
-            }
+            # Update to processing
+            if document_id in self.processing_status:
+                self.processing_status[document_id].update(
+                    {
+                        "status": "processing",
+                        "progress": 10,
+                        "message": "Extracting text",
+                    }
+                )
+            else:
+                # Fallback if not initialized (should not happen with new flow)
+                self.processing_status[document_id] = {
+                    "document_id": document_id,
+                    "status": "processing",
+                    "progress": 10,
+                    "message": "Extracting text",
+                    "filename": filename,
+                    "created_at": datetime.utcnow(),
+                }
 
             if progress_callback:
                 await progress_callback(self.processing_status[document_id])
@@ -100,14 +133,40 @@ class DocumentProcessorService:
                 }
 
             await self._update_progress(
-                document_id, 80, "AI analysis complete", progress_callback
+                document_id,
+                80,
+                "AI analysis complete, indexing for search",
+                progress_callback,
+            )
+
+            # Stage 3: Index document content for RAG retrieval
+            try:
+                indexing_result = await self.retrieval_service.index_document(
+                    document_id=document_id,
+                    content=extracted_text,
+                    metadata={
+                        "filename": filename,
+                        **doc_metadata,
+                        "summary": enhanced_result.get("summary", ""),
+                    },
+                )
+                logger.info(
+                    f"Indexed document {document_id}: {indexing_result.chunks_indexed} chunks"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to index document {document_id}: {e}")
+
+            await self._update_progress(
+                document_id, 95, "Finalizing", progress_callback
             )
 
             # Stage 3: Finalize results
             final_result = {
                 "document_id": document_id,
                 "status": "completed",
-                "progress": {"progress": 100, "current_stage": "Complete"},
+                "progress": 100,
+                "message": "Complete",
+                "filename": filename,
                 "result": {
                     "original_text": extracted_text,
                     "metadata": doc_metadata,
@@ -249,10 +308,8 @@ class DocumentProcessorService:
     ):
         """Update processing progress"""
         if document_id in self.processing_status:
-            self.processing_status[document_id]["progress"] = {
-                "progress": progress,
-                "current_stage": stage,
-            }
+            self.processing_status[document_id]["progress"] = progress
+            self.processing_status[document_id]["message"] = stage
 
             if callback:
                 await callback(self.processing_status[document_id])

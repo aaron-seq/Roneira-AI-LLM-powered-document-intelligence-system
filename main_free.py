@@ -149,10 +149,14 @@ async def lifespan(app: FastAPI):
         llm_service = get_llm_service()
         ocr_service = get_ocr_service()
 
-        # Initialize Redis
-        redis_client = redis.from_url(REDIS_URL, decode_responses=True)
-        await redis_client.ping()
-        logger.info("Redis connection established")
+        # Initialize Redis (optional - app works without it)
+        try:
+            redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+            await redis_client.ping()
+            logger.info("Redis connection established")
+        except Exception as redis_err:
+            logger.warning(f"Redis not available (optional): {redis_err}")
+            redis_client = None
 
         # Create database tables
         async with engine.begin() as conn:

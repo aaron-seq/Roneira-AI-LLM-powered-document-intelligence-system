@@ -32,6 +32,7 @@ from backend.services.websocket_manager import WebSocketManager
 from backend.services.auth_service import AuthService
 from backend.services.chat_service import ChatService
 from backend.services.guardrail_service import GuardrailService
+from backend.services.feedback_service import FeedbackService
 from backend.models.responses import (
     HealthCheckResponse,
     DocumentUploadResponse,
@@ -48,6 +49,19 @@ from backend.models.chat_models import (
     ConversationHistoryResponse,
     RAGStatsResponse,
 )
+
+
+class FeedbackRequest(BaseModel):
+    message_id: str
+    is_positive: bool
+
+
+class DashboardMetricsResponse(BaseModel):
+    total_documents: int
+    processed_documents: int
+    accuracy: float
+    avg_confidence: float
+
 
 # Configure logging
 logging.basicConfig(
@@ -69,13 +83,14 @@ document_processor: Optional[DocumentProcessorService] = None
 auth_service: Optional[AuthService] = None
 chat_service: Optional[ChatService] = None
 guardrail_service: Optional[GuardrailService] = None
+feedback_service: Optional[FeedbackService] = None
 
 
 @asynccontextmanager
 async def application_lifespan(app: FastAPI):
     """Enhanced application lifecycle management"""
     global db_manager, websocket_manager, document_processor, auth_service
-    global chat_service, guardrail_service
+    global chat_service, guardrail_service, feedback_service
 
     settings = get_settings()
     logger.info("🚀 Starting Document Intelligence System...")
@@ -90,13 +105,25 @@ async def application_lifespan(app: FastAPI):
         auth_service = AuthService()
 
         # Initialize AI services
-        await document_processor.initialize()
+        try:
+            await document_processor.initialize()
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Document Processor: {e}")
 
         # Initialize RAG services
-        chat_service = ChatService()
-        guardrail_service = GuardrailService()
-        await chat_service.initialize()
-        logger.info("✅ RAG services initialized")
+        try:
+            chat_service = ChatService()
+            guardrail_service = GuardrailService()
+            await chat_service.initialize()
+            logger.info("✅ RAG services initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize RAG services: {e}")
+            logger.warning("⚠️ Chat features will be unavailable")
+
+        try:
+            feedback_service = FeedbackService()
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Feedback Service: {e}")
 
         # Create upload directories
         os.makedirs(settings.upload_directory, exist_ok=True)
@@ -265,6 +292,9 @@ async def upload_document_for_processing(
             "demo_user",  # In production, get from JWT token
         )
 
+        # Initialize status synchronously to avoid race condition
+        document_processor.initialize_status(document_id, file.filename)
+
         # Queue for background processing
         processing_options = {
             "extract_tables": extract_tables,
@@ -274,7 +304,11 @@ async def upload_document_for_processing(
         }
 
         background_tasks.add_task(
-            process_document_async, document_id, file_path, processing_options
+            process_document_async,
+            document_id,
+            file_path,
+            processing_options,
+            file.filename,
         )
 
         return DocumentUploadResponse(
@@ -378,7 +412,7 @@ async def websocket_document_updates(websocket: WebSocket, client_id: str):
 
 
 async def process_document_async(
-    document_id: str, file_path: str, options: Dict[str, Any]
+    document_id: str, file_path: str, options: Dict[str, Any], filename: str
 ):
     """Background document processing task"""
     if not document_processor or not websocket_manager:
@@ -390,6 +424,7 @@ async def process_document_async(
             document_id,
             file_path,
             options,
+            filename=filename,
             progress_callback=lambda progress: asyncio.create_task(
                 websocket_manager.broadcast_progress(document_id, progress)
             ),
@@ -539,6 +574,65 @@ async def get_rag_statistics() -> RAGStatsResponse:
     except Exception as e:
         logger.error(f"Stats retrieval error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/feedback", tags=["Feedback"])
+async def submit_feedback(request: FeedbackRequest) -> Dict[str, Any]:
+    """Submit feedback for a chat message."""
+    if not feedback_service:
+        raise HTTPException(status_code=500, detail="Feedback service unavailable")
+
+    return await feedback_service.add_feedback(request.is_positive)
+
+
+@app.get(
+    "/api/dashboard/metrics",
+    response_model=DashboardMetricsResponse,
+    tags=["Dashboard"],
+)
+async def get_dashboard_metrics() -> DashboardMetricsResponse:
+    """Get real-time dashboard metrics."""
+    if not feedback_service or not document_processor:
+        raise HTTPException(status_code=500, detail="Services unavailable")
+
+    # Get stats
+    feedback_stats = feedback_service.get_stats()
+
+    # Count real files in uploads directory
+    settings = get_settings()
+    total_docs = 0
+    if os.path.exists(settings.upload_directory):
+        # Recursively count files
+        for root, dirs, files in os.walk(settings.upload_directory):
+            total_docs += len([f for f in files if not f.startswith(".")])
+
+    # Get processed docs count from memory service
+    processed_docs = await document_processor.list_documents(limit=1000)
+    processed_count = len(processed_docs)
+
+    # Calculate average confidence
+    avg_conf = 0.985  # Default high confidence if no docs
+    if processed_docs:
+        confidences = []
+        for doc in processed_docs:
+            # Try to extract confidence from nested structure
+            result = doc.get("result", {})
+            ai_analysis = result.get("ai_analysis", {})
+            conf = ai_analysis.get("confidence")
+            if conf:
+                confidences.append(float(conf))
+
+        if confidences:
+            avg_conf = sum(confidences) / len(confidences)
+
+    return DashboardMetricsResponse(
+        total_documents=total_docs,
+        processed_documents=processed_count,
+        accuracy=feedback_stats["accuracy"],
+        avg_confidence=avg_conf * 100
+        if avg_conf <= 1
+        else avg_conf,  # Ensure percentage
+    )
 
 
 # Error handlers

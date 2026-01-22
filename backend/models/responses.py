@@ -92,6 +92,10 @@ class DocumentStatusResponse(BaseModel):
     ai_insights: Optional[Dict[str, Any]] = Field(
         default=None, description="AI-generated insights and analysis"
     )
+    result: Optional[Dict[str, Any]] = Field(
+        default=None, description="Raw result dictionary containing text and metadata"
+    )
+    filename: Optional[str] = Field(default=None, description="Original filename")
 
     class Config:
         json_schema_extra = {

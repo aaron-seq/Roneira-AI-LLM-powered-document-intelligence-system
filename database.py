@@ -32,9 +32,8 @@ logger = logging.getLogger(__name__)
 # The async engine is the core of our database connection.
 # It manages a pool of connections to the database.
 db_engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.is_development,  # Log SQL queries in development
-    **settings.get_database_config(),
+    settings.database_url,
+    **settings.get_database_configuration(),
 )
 
 # The session maker is a factory for creating new database sessions.

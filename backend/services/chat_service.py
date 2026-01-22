@@ -181,15 +181,14 @@ class ChatService:
         prompt_parts.append("Assistant:")
         full_prompt = "\n\n".join(prompt_parts)
 
-        # Use LLM service
-        result = await self.llm.enhance_document_data(
-            extracted_text=full_prompt, document_metadata={"type": "chat"}
+        # Use LLM service's chat-specific method
+        response = await self.llm.generate_chat_response(full_prompt)
+
+        return (
+            response
+            if response
+            else "I couldn't generate a response. Please try again."
         )
-
-        if "error" in result:
-            return f"I apologize, but I encountered an error: {result['error']}"
-
-        return result.get("summary", result.get("analysis", "No response generated."))
 
     async def stream_chat(
         self, message: str, session_id: Optional[str] = None, use_rag: bool = True
