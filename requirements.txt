@@ -1,13 +1,13 @@
 # Core FastAPI and web framework
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic==2.8.2
+pydantic-settings==2.3.0
 
 # Authentication and Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
+python-multipart==0.0.9
 
 # Database
 sqlalchemy==2.0.23
@@ -22,12 +22,12 @@ redis[hiredis]==5.0.1
 # No additional dependencies needed - Ollama runs as separate service
 
 # OpenAI SDK (for Ollama compatibility and future extensibility)
-openai==1.3.8
+openai==1.30.1
 
 # LangChain for RAG and document processing
-langchain==0.0.340
-langchain-openai==0.0.2
-langchain-community==0.0.1
+langchain==0.2.5
+langchain-openai==0.1.8
+langchain-community==0.2.5
 
 # RAG Pipeline (Vector Search & Embeddings)
 sentence-transformers>=2.2.0
@@ -50,7 +50,7 @@ python-magic==0.4.27
 # Utilities
 python-dotenv==1.0.0
 click==8.1.7
-typer==0.9.0
+typer>=0.12.3
 
 # Monitoring and logging
 structlog==23.2.0
@@ -74,4 +74,5 @@ gunicorn==21.2.0
 websockets==12.0
 
 # JSON handling
-orjson==3.9.10
+orjson>=3.9.14
+aiofiles

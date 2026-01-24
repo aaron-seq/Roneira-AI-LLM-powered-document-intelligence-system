@@ -38,7 +38,8 @@ import { useNavigate } from 'react-router-dom';
 // Advanced Analytics & Visualizations
 // ==============================================================================
 
-const API_BASE = 'http://localhost:8000';
+// API paths handled by Vite proxy
+// const API_BASE = 'http://localhost:8000';
 
 interface MetricCardProps {
     title: string;
@@ -143,6 +144,7 @@ const Dashboard = () => {
     const navigate = useNavigate();
     const [documents, setDocuments] = useState<any[]>([]);
     const [health, setHealth] = useState<any>(null);
+    const [metrics, setMetrics] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     
     // Theme Gradients
@@ -164,12 +166,17 @@ const Dashboard = () => {
 
     const fetchData = async () => {
         try {
-            const [docsRes, healthRes] = await Promise.all([
-                fetch(`${API_BASE}/documents?limit=100`),
-                fetch(`${API_BASE}/health`)
+            const [docsRes, healthRes, metricsRes] = await Promise.all([
+                fetch('/api/documents?limit=100'),
+                fetch('/health'), // Might need /api/health depending on backend routing, assuming root health check
+                fetch('/api/dashboard/metrics')
             ]);
-            if (docsRes.ok) setDocuments(await docsRes.json());
+            if (docsRes.ok) {
+                const data = await docsRes.json();
+                setDocuments(data.documents || []);
+            }
             if (healthRes.ok) setHealth(await healthRes.json());
+            if (metricsRes.ok) setMetrics(await metricsRes.json());
             setLoading(false);
         } catch (error) {
             console.error(error);
@@ -180,9 +187,9 @@ const Dashboard = () => {
     useEffect(() => { fetchData(); const i = setInterval(fetchData, 15000); return () => clearInterval(i); }, []);
 
     // Calculated Metrics
-    const total = documents.length;
-    const completed = documents.filter(d => d.is_processed).length;
-    const processing = documents.filter(d => !d.is_processed && d.status !== 'failed').length;
+    const total = metrics?.total_documents || documents.length;
+    const completed = metrics?.processed_documents || documents.filter(d => d.status === 'completed').length;
+    const processing = documents.filter(d => d.status === 'processing').length;
     const failed = documents.filter(d => d.status === 'failed').length;
     
     // Document Types
@@ -195,14 +202,17 @@ const Dashboard = () => {
     };
     
     const types = documents.reduce((acc, doc) => {
-        const type = getDocType(doc.filename);
+        const type = getDocType(doc.filename || 'unknown');
         acc[type] = (acc[type] || 0) + 1;
         return acc;
     }, {} as Record<string, number>);
 
-    // Insight Metrics (Mocked/Derived)
-    const avgConfidence = total > 0 ? (98.4 + (Math.random() * 1.5)).toFixed(1) : '0';
-    const avgTime = total > 0 ? '0.8s' : '-';
+    // Insight Metrics (Derived from actual data)
+    // Guard against metrics being null/undefined
+    const accuracy = (metrics?.accuracy !== undefined && metrics?.accuracy !== null) 
+        ? Number(metrics.accuracy).toFixed(1) 
+        : '100.0';
+    const avgTime = '-'; // Will be populated when we have real processing time metrics
     const storageUsed = (documents.reduce((acc, d) => acc + (d.file_size || 0), 0) / 1024 / 1024).toFixed(2);
 
     return (
@@ -256,7 +266,6 @@ const Dashboard = () => {
                         value={total} 
                         subValue="documents"
                         icon={<Storage sx={{ color: '#a855f7' }} />} 
-                        trend={{ value: '+22%', isPositive: true }}
                         gradient={gradients.primary} 
                         glowColor={glows.primary} 
                         loading={loading} 
@@ -264,10 +273,9 @@ const Dashboard = () => {
                 </Grid>
                 <Grid item xs={12} sm={6} lg={3}>
                     <MetricCard 
-                        title="Extraction Accuracy" 
-                        value={`${avgConfidence}%`} 
+                        title="AI Accuracy Score" 
+                        value={`${accuracy}%`} 
                         icon={<VerifiedUser sx={{ color: '#10b981' }} />} 
-                        trend={{ value: '+1.2%', isPositive: true }}
                         gradient={gradients.success} 
                         glowColor={glows.success} 
                         loading={loading} 
@@ -307,10 +315,10 @@ const Dashboard = () => {
                                 <PieChart sx={{ color: 'text.secondary' }} />
                             </Box>
                             
-                            <DistributionBar label="Finance & Invoices" value={((types['Finance'] || 0) / total) * 100 || 0} count={types['Finance'] || 0} color="#6366f1" />
-                            <DistributionBar label="Human Resources" value={((types['HR'] || 0) / total) * 100 || 0} count={types['HR'] || 0} color="#10b981" />
-                            <DistributionBar label="Engineering" value={((types['Engineering'] || 0) / total) * 100 || 0} count={types['Engineering'] || 0} color="#f59e0b" />
-                            <DistributionBar label="Uncategorized" value={((types['General'] || 0) / total) * 100 || 0} count={types['General'] || 0} color="#94a3b8" />
+                            <DistributionBar label="Finance & Invoices" value={total > 0 ? ((types['Finance'] || 0) / total) * 100 : 0} count={types['Finance'] || 0} color="#6366f1" />
+                            <DistributionBar label="Human Resources" value={total > 0 ? ((types['HR'] || 0) / total) * 100 : 0} count={types['HR'] || 0} color="#10b981" />
+                            <DistributionBar label="Engineering" value={total > 0 ? ((types['Engineering'] || 0) / total) * 100 : 0} count={types['Engineering'] || 0} color="#f59e0b" />
+                            <DistributionBar label="Uncategorized" value={total > 0 ? ((types['General'] || 0) / total) * 100 : 0} count={types['General'] || 0} color="#94a3b8" />
                             
                             <Divider sx={{ my: 3, borderColor: 'rgba(255,255,255,0.1)' }} />
                             
@@ -344,16 +352,20 @@ const Dashboard = () => {
                                     </Box>
                                     <Box sx={{ display: 'flex', gap: 3 }}>
                                         <Box sx={{ textAlign: 'right' }}>
-                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>API Latency</Typography>
-                                            <Typography variant="body1" sx={{ fontWeight: 600, color: '#10b981' }}>24ms</Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Database</Typography>
+                                            <Typography variant="body1" sx={{ fontWeight: 600, color: health?.database_status === 'connected' ? '#10b981' : '#ef4444' }}>
+                                                {health?.database_status || '-'}
+                                            </Typography>
                                         </Box>
                                         <Box sx={{ textAlign: 'right' }}>
-                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Queue Depth</Typography>
-                                            <Typography variant="body1" sx={{ fontWeight: 600, color: '#06b6d4' }}>0 jobs</Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Processing Queue</Typography>
+                                            <Typography variant="body1" sx={{ fontWeight: 600, color: '#06b6d4' }}>{processing} jobs</Typography>
                                         </Box>
                                         <Box sx={{ textAlign: 'right' }}>
-                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Uptime</Typography>
-                                            <Typography variant="body1" sx={{ fontWeight: 600, color: '#a855f7' }}>99.99%</Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Services</Typography>
+                                            <Typography variant="body1" sx={{ fontWeight: 600, color: health?.services_status === 'operational' ? '#a855f7' : '#f59e0b' }}>
+                                                {health?.services_status || '-'}
+                                            </Typography>
                                         </Box>
                                     </Box>
                                 </CardContent>

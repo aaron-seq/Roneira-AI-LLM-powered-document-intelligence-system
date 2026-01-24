@@ -130,7 +130,7 @@ export const theme = createTheme({
     '0 12px 32px rgba(0, 0, 0, 0.45)',
     '0 16px 40px rgba(0, 0, 0, 0.5)',
     ...Array(18).fill('none'),
-  ],
+  ] as any,
 
   components: {
     MuiCssBaseline: {

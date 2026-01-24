@@ -240,21 +240,11 @@ class RetrieverAgent(Agent):
                 )
                 retrieved_docs = result.results if hasattr(result, "results") else []
             else:
-                # Mock retrieval for demonstration
-                retrieved_docs = [
-                    {
-                        "id": "doc_1",
-                        "content": f"Relevant content for query: {state.query[:50]}...",
-                        "score": 0.95,
-                        "metadata": {"source": "knowledge_base"},
-                    },
-                    {
-                        "id": "doc_2",
-                        "content": "Additional context and supporting information.",
-                        "score": 0.87,
-                        "metadata": {"source": "documents"},
-                    },
-                ]
+                # No retrieval service configured - return empty results
+                logger.warning(
+                    "No retrieval service configured. Document retrieval skipped."
+                )
+                retrieved_docs = []
 
             state.retrieved_documents = retrieved_docs
             state.context = [doc.get("content", "") for doc in retrieved_docs]
@@ -354,14 +344,11 @@ class SynthesizerAgent(Agent):
                     prompt=f"Context:\n{context}\n\nQuestion: {query}\n\nAnswer:",
                 )
             else:
-                # Mock response for demonstration
-                response = (
-                    f"Based on the retrieved context about '{query}', "
-                    f"the relevant information indicates that this topic "
-                    f"involves multiple aspects covered in the knowledge base. "
-                    f"The documents provide comprehensive information "
-                    f"addressing the query requirements."
+                # No LLM service configured - cannot generate response
+                logger.warning(
+                    "No LLM service configured. Response generation unavailable."
                 )
+                response = "I'm sorry, but the LLM service is not currently available. Please try again later."
 
             state.response = response
             state.confidence = 0.85

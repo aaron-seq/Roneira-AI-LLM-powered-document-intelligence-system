@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { 
     Box, 
     TextField, 
@@ -9,7 +9,12 @@ import {
     CircularProgress,
     Tooltip,
     Collapse,
-    Button
+    Button,
+    Drawer,
+    Slider,
+    Switch,
+    FormControlLabel,
+    Divider
 } from '@mui/material';
 import { 
     Send, 
@@ -27,6 +32,8 @@ import {
     Download
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import axios from 'axios';
 
 // ==============================================================================
 // Roneira AI - AI Chat Interface
@@ -60,6 +67,11 @@ const AIChat = () => {
     const [documents, setDocuments] = useState<any[]>([]);
     const [detailedMode, setDetailedMode] = useState(false);
     const [expandedRefs, setExpandedRefs] = useState<string[]>([]);
+    const [sessionId] = useState(() => crypto.randomUUID());
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [ragEnabled, setRagEnabled] = useState(true);
+    const [temperature, setTemperature] = useState(0.7);
+    const [maxTokens, setMaxTokens] = useState(512);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -81,10 +93,11 @@ const AIChat = () => {
 
     const fetchDocuments = async () => {
         try {
-            const response = await fetch(`${API_BASE}/documents?limit=100`);
-            if (response.ok) {
-                const data = await response.json();
-                setDocuments(data);
+            // Correct endpoint for document list
+            const response = await axios.get('/api/documents?limit=100');
+            console.log('Fetched documents:', response.data);
+            if (response.data && response.data.documents) {
+                setDocuments(response.data.documents);
             }
         } catch (error) {
             console.error('Failed to fetch documents:', error);
@@ -93,7 +106,7 @@ const AIChat = () => {
 
     // Download Document
     const handleDownload = (docId: string, filename: string) => {
-        window.open(`${API_BASE}/documents/${docId}/download`, '_blank');
+        window.open(`/api/documents/${docId}/download`, '_blank');
     };
 
     // Search documents for relevant context
@@ -107,18 +120,19 @@ const AIChat = () => {
     // Query LLM with document context
     const queryLLM = async (query: string, isDetailed: boolean) => {
         try {
-            const response = await fetch(`${API_BASE}/query`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    query: query,
-                    max_tokens: isDetailed ? 2048 : 512,
-                    detailed: isDetailed
-                })
+            // Correct endpoint for chat completion
+            const response = await axios.post('/api/chat', {
+                message: query,
+                session_id: sessionId,
+                use_rag: true,
+                rag_top_k: 3,
+                document_id: null,
+                max_tokens: isDetailed ? 2048 : 512,
+                detailed: isDetailed
             });
 
-            if (response.ok) {
-                return await response.json();
+            if (response.status === 200) {
+                return response.data;
             }
             throw new Error('Query failed');
         } catch (error) {
@@ -159,7 +173,7 @@ const AIChat = () => {
                     msg.id === assistantMessage.id 
                         ? { 
                             ...msg, 
-                            content: data.response, 
+                            content: data.message, 
                             isLoading: false, 
                             references: data.sources 
                         }
@@ -191,6 +205,75 @@ const AIChat = () => {
 
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text);
+        toast.success('Copied to clipboard');
+    };
+
+    // Regenerate response for a specific message
+    const regenerateResponse = async (messageId: string) => {
+        // Find the user message that preceded this assistant message
+        const messageIndex = messages.findIndex(m => m.id === messageId);
+        if (messageIndex <= 0) return;
+        
+        const userMessage = messages[messageIndex - 1];
+        if (userMessage.role !== 'user') return;
+
+        // Mark the assistant message as loading
+        setMessages(prev => prev.map(msg => 
+            msg.id === messageId ? { ...msg, isLoading: true, content: '' } : msg
+        ));
+        setIsLoading(true);
+
+        try {
+            const data = await queryLLM(userMessage.content, detailedMode);
+            if (data) {
+                setMessages(prev => prev.map(msg => 
+                    msg.id === messageId 
+                        ? { ...msg, content: data.message, isLoading: false, references: data.sources }
+                        : msg
+                ));
+            } else {
+                setMessages(prev => prev.map(msg => 
+                    msg.id === messageId 
+                        ? { ...msg, content: 'Failed to regenerate response.', isLoading: false }
+                        : msg
+                ));
+            }
+        } catch (error) {
+            setMessages(prev => prev.map(msg => 
+                msg.id === messageId 
+                    ? { ...msg, content: 'An error occurred while regenerating.', isLoading: false }
+                    : msg
+            ));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Feedback handlers
+    const handleFeedback = async (messageId: string, isPositive: boolean) => {
+        try {
+            await axios.post('/api/feedback', {
+                message_id: messageId, 
+                is_positive: isPositive
+            });
+            toast.success('Thanks for your feedback! This helps us improve.');
+        } catch (error) {
+            console.error('Feedback failed:', error);
+            toast.error('Failed to submit feedback');
+        }
+    };
+
+    // Settings handler
+    const handleSettings = () => {
+        setSettingsOpen(true);
+    };
+
+    // Attach handler
+    const handleAttach = () => {
+        navigate('/upload');
+        toast('Please upload documents here to chat with them.', {
+            icon: '📎',
+        });
     };
 
     return (
@@ -237,7 +320,7 @@ const AIChat = () => {
                             }}
                         />
                         <Tooltip title="Settings">
-                            <IconButton sx={{ color: 'text.secondary' }}>
+                            <IconButton onClick={handleSettings} sx={{ color: 'text.secondary' }}>
                                 <Settings />
                             </IconButton>
                         </Tooltip>
@@ -377,13 +460,18 @@ const AIChat = () => {
                                                     <ContentCopy sx={{ fontSize: 16, color: 'text.secondary' }} />
                                                 </IconButton>
                                             </Tooltip>
+                                            <Tooltip title="Regenerate">
+                                                <IconButton size="small" onClick={() => regenerateResponse(message.id)}>
+                                                    <Refresh sx={{ fontSize: 16, color: 'text.secondary' }} />
+                                                </IconButton>
+                                            </Tooltip>
                                             <Tooltip title="Good response">
-                                                <IconButton size="small">
+                                                <IconButton size="small" onClick={() => handleFeedback(message.id, true)}>
                                                     <ThumbUp sx={{ fontSize: 16, color: 'text.secondary' }} />
                                                 </IconButton>
                                             </Tooltip>
                                             <Tooltip title="Poor response">
-                                                <IconButton size="small">
+                                                <IconButton size="small" onClick={() => handleFeedback(message.id, false)}>
                                                     <ThumbDown sx={{ fontSize: 16, color: 'text.secondary' }} />
                                                 </IconButton>
                                             </Tooltip>
@@ -439,7 +527,7 @@ const AIChat = () => {
                     />
                     
                     <Tooltip title="Attach document">
-                        <IconButton sx={{ color: 'text.secondary' }}>
+                        <IconButton onClick={handleAttach} sx={{ color: 'text.secondary' }}>
                             <AttachFile />
                         </IconButton>
                     </Tooltip>
@@ -463,6 +551,97 @@ const AIChat = () => {
                     </IconButton>
                 </Paper>
             </Box>
+
+            {/* Settings Drawer */}
+            <Drawer
+                anchor="right"
+                open={settingsOpen}
+                onClose={() => setSettingsOpen(false)}
+                PaperProps={{
+                    sx: {
+                        width: 320,
+                        background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+                        borderLeft: '1px solid rgba(99, 102, 241, 0.2)',
+                        p: 3
+                    }
+                }}
+            >
+                <Typography variant="h6" sx={{ fontWeight: 700, color: 'white', mb: 3 }}>
+                    Chat Settings
+                </Typography>
+                
+                <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)', mb: 3 }} />
+                
+                {/* RAG Toggle */}
+                <FormControlLabel
+                    control={
+                        <Switch 
+                            checked={ragEnabled} 
+                            onChange={(e) => setRagEnabled(e.target.checked)}
+                            sx={{ '& .MuiSwitch-thumb': { bgcolor: '#6366f1' } }}
+                        />
+                    }
+                    label={<Typography sx={{ color: 'text.primary' }}>Enable RAG</Typography>}
+                    sx={{ mb: 2 }}
+                />
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 3 }}>
+                    Use document context for answers
+                </Typography>
+                
+                {/* Temperature Slider */}
+                <Typography sx={{ color: 'text.primary', mb: 1 }}>Temperature: {temperature}</Typography>
+                <Slider
+                    value={temperature}
+                    onChange={(_, val) => setTemperature(val as number)}
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    sx={{ color: '#6366f1', mb: 3 }}
+                />
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 3 }}>
+                    Lower = more focused, Higher = more creative
+                </Typography>
+                
+                {/* Max Tokens Slider */}
+                <Typography sx={{ color: 'text.primary', mb: 1 }}>Max Tokens: {maxTokens}</Typography>
+                <Slider
+                    value={maxTokens}
+                    onChange={(_, val) => setMaxTokens(val as number)}
+                    min={128}
+                    max={2048}
+                    step={128}
+                    sx={{ color: '#06b6d4', mb: 3 }}
+                />
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 3 }}>
+                    Maximum response length
+                </Typography>
+                
+                <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)', mb: 3 }} />
+                
+                {/* Model Info */}
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>Current Model</Typography>
+                <Chip 
+                    label="llama3.2:3b" 
+                    size="small" 
+                    sx={{ bgcolor: 'rgba(99, 102, 241, 0.2)', color: '#6366f1', mb: 3 }}
+                />
+                
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>Session ID</Typography>
+                <Typography variant="caption" sx={{ color: '#06b6d4', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {sessionId}
+                </Typography>
+                
+                <Box sx={{ mt: 'auto', pt: 4 }}>
+                    <Button 
+                        fullWidth 
+                        variant="outlined" 
+                        onClick={() => setSettingsOpen(false)}
+                        sx={{ borderColor: 'rgba(99, 102, 241, 0.3)', color: 'text.primary' }}
+                    >
+                        Close
+                    </Button>
+                </Box>
+            </Drawer>
         </Box>
     );
 };

@@ -38,8 +38,12 @@ class LocalLLMService:
 
         except Exception as e:
             logger.error(f"❌ Failed to initialize local LLM service: {e}")
+            logger.warning(
+                "⚠️ Application will continue in DEGRADED mode (No AI features)"
+            )
             self.is_initialized = False
-            raise
+            # Do NOT raise exception to allow app to start
+            # raise
 
     async def _check_model_availability(self):
         """Check if the specified model is available"""
@@ -227,6 +231,22 @@ Respond ONLY with valid JSON, no additional text.
                 "word_count": len(original_text.split()),
                 "processing_notes": "Basic processing - AI response could not be parsed",
             }
+
+    async def generate_chat_response(self, prompt: str) -> str:
+        """Generate a direct text response for chat conversations.
+
+        Unlike enhance_document_data which returns structured JSON,
+        this method returns raw text suitable for conversational AI.
+        """
+        if not self.is_initialized:
+            logger.warning("LLM service not initialized")
+            return "I apologize, but the AI service is currently unavailable. Please ensure Ollama is running and try again."
+
+        try:
+            return await self._generate_response(prompt)
+        except Exception as e:
+            logger.error(f"Error generating chat response: {e}")
+            return f"I encountered an error generating a response: {str(e)}"
 
     async def summarize_text(self, text: str, max_length: int = 200) -> str:
         """Generate a summary of the given text"""

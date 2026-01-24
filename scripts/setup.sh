@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Setting up Document Intelligence System..."
+echo " Setting up Document Intelligence System..."
 
 # Create virtual environment
 python -m venv venv
