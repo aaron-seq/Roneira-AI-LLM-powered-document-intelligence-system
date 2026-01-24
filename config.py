@@ -61,6 +61,12 @@ class ApplicationConfiguration(BaseSettings):
     redis_password: Optional[str] = Field(default=None, env="REDIS_PASSWORD")
     redis_connection_pool_size: int = Field(default=10)
 
+    # Ollama configuration
+    ollama_base_url: str = Field(
+        default="http://host.docker.internal:11434", env="OLLAMA_BASE_URL"
+    )
+    ollama_model: str = Field(default="llama3", env="OLLAMA_MODEL")
+
     # Azure OpenAI configuration
     azure_openai_api_key: str = Field(default="", env="AZURE_OPENAI_API_KEY")
     azure_openai_endpoint: str = Field(default="", env="AZURE_OPENAI_ENDPOINT")
