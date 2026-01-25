@@ -67,6 +67,20 @@ class ApplicationConfiguration(BaseSettings):
     )
     ollama_model: str = Field(default="llama3", env="OLLAMA_MODEL")
 
+    # LLM Provider selection
+    llm_provider: str = Field(
+        default="ollama", 
+        env="LLM_PROVIDER",
+        description="Primary LLM provider: 'ollama', 'azure_openai', or 'vllm'"
+    )
+    llm_fallback_provider: Optional[str] = Field(
+        default=None,
+        env="LLM_FALLBACK_PROVIDER", 
+        description="Fallback LLM provider if primary fails"
+    )
+    llm_request_timeout: float = Field(default=120.0, env="LLM_REQUEST_TIMEOUT")
+    llm_max_retries: int = Field(default=3, env="LLM_MAX_RETRIES")
+
     # Azure OpenAI configuration
     azure_openai_api_key: str = Field(default="", env="AZURE_OPENAI_API_KEY")
     azure_openai_endpoint: str = Field(default="", env="AZURE_OPENAI_ENDPOINT")
