@@ -43,6 +43,9 @@
     "rollup-plugin-visualizer": "^6.0.5",
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
-    "vite-tsconfig-paths": "^6.0.4"
+    "vite-tsconfig-paths": "^6.0.4",
+    "cypress": "^13.6.0",
+    "@playwright/test": "^1.40.0",
+    "selenium-webdriver": "^4.16.0"
   }
 }
