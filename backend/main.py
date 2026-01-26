@@ -63,18 +63,13 @@ class DashboardMetricsResponse(BaseModel):
     avg_confidence: float
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("logs/app.log")
-        if os.path.exists("logs")
-        else logging.StreamHandler(),
-        logging.StreamHandler(),
-    ],
-)
-logger = logging.getLogger(__name__)
+from backend.utils.telemetry import setup_telemetry
+from backend.utils.exceptions import AppError, global_exception_handler
+
+# Configure Telemetry (Structured Logging)
+setup_telemetry()
+# Standard library logger to bridge with structlog
+logger = logging.getLogger("backend.api")
 
 # Global services (will be initialized in lifespan)
 db_manager: Optional[DatabaseManager] = None
@@ -635,29 +630,13 @@ async def get_dashboard_metrics() -> DashboardMetricsResponse:
     )
 
 
-# Error handlers
-@app.exception_handler(404)
-async def not_found_handler(request: Request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={
-            "detail": "Resource not found",
-            "path": str(request.url.path),
-            "timestamp": datetime.utcnow().isoformat(),
-        },
-    )
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    return await global_exception_handler(request, exc)
 
-
-@app.exception_handler(500)
-async def internal_error_handler(request: Request, exc):
-    logger.error(f"Internal server error: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Internal server error",
-            "timestamp": datetime.utcnow().isoformat(),
-        },
-    )
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError):
+    return await global_exception_handler(request, exc)
 
 
 if __name__ == "__main__":

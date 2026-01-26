@@ -70,10 +70,10 @@ format-backend: ## Format the backend Python code
 	black .
 
 lint-frontend: ## Lint the frontend TypeScript/React code
-	cd frontend && npm run lint
+	npm run lint
 
 format-frontend: ## Format the frontend TypeScript/React code
-	cd frontend && npm run format
+	npm run format
 
 quality-check: lint-backend lint-frontend ## Run all code quality checks
 

@@ -42,6 +42,7 @@ services:
     ports:
       # Maps port 8000 on the host to port 8000 in the container.
       - "${APP_PORT:-8000}:8000"
+      - "5678:5678"
     environment:
       # Environment variables are passed to the container.
       # It's recommended to use a .env file for sensitive data.
