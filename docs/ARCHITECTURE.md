@@ -6,13 +6,16 @@ Enterprise-grade document processing system combining Azure AI services with adv
 
 ```mermaid
 graph TB
-    subgraph "Client Layer"
+    subgraph "Level 1: System Context"
         WEB[Web Application]
         API_CLIENT[API Clients]
     end
 
-    subgraph "API Gateway Layer"
+    subgraph "Level 2: Containers"
         FASTAPI[FastAPI Application]
+        AUTH[Authentication Service]
+        DOC_INTEL[Document Intelligence Service]
+    end
         RATE_LIMIT[Rate Limiter]
         AUTH[Authentication Service]
     end
