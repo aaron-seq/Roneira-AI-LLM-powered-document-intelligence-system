@@ -7,24 +7,16 @@ import uuid
 import aiofiles
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
-import logging
 import asyncio
 
-# Document processing imports
-try:
-    import pdfplumber
-except ImportError:
-    import PyPDF2
-
-    pdfplumber = None
-from docx import Document as DocxDocument
-import re
-
+# Shared helpers
+from backend.common.helpers import extract_text_from_file
 from backend.core.config import get_settings
 from backend.services.local_llm_service import LocalLLMService
 from backend.services.retrieval_service import RetrievalService
+from backend.observability.structured_logging import get_logger, with_correlation_id
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DocumentProcessorService:
@@ -36,13 +28,18 @@ class DocumentProcessorService:
         self.retrieval_service = RetrievalService()  # For RAG indexing
         self.processing_status: Dict[str, Dict[str, Any]] = {}
 
+    @with_correlation_id
     async def initialize(self):
         """Initialize the document processor and LLM service"""
         try:
             await self.llm_service.initialize()
             await self.retrieval_service.initialize()  # Init vector store
         except Exception as e:
-            logger.warning(f"⚠️ Document processor initialized without LLM: {e}")
+            logger.warning(
+                f"⚠️ Document processor initialized without LLM",
+                error=str(e),
+                exc_info=True
+            )
 
         if self.llm_service.is_initialized:
             logger.info("✅ Document processor with local LLM initialized")
@@ -82,6 +79,7 @@ class DocumentProcessorService:
         """Get document processing status"""
         return self.processing_status.get(document_id)
 
+    @with_correlation_id
     async def process_document_with_ai(
         self,
         document_id: str,
@@ -102,7 +100,6 @@ class DocumentProcessorService:
                     }
                 )
             else:
-                # Fallback if not initialized (should not happen with new flow)
                 self.processing_status[document_id] = {
                     "document_id": document_id,
                     "status": "processing",
@@ -115,8 +112,8 @@ class DocumentProcessorService:
             if progress_callback:
                 await progress_callback(self.processing_status[document_id])
 
-            # Stage 1: Extract text from document
-            extracted_text, doc_metadata = await self._extract_text_from_file(file_path)
+            # Stage 1: Extract text (Delegated to Helper)
+            extracted_text, doc_metadata = await extract_text_from_file(file_path)
 
             await self._update_progress(
                 document_id, 40, "Text extracted, analyzing with AI", progress_callback
@@ -164,7 +161,7 @@ class DocumentProcessorService:
                 document_id, 95, "Finalizing", progress_callback
             )
 
-            # Stage 3: Finalize results
+            # Stage 4: Finalize results
             final_result = {
                 "document_id": document_id,
                 "status": "completed",
@@ -187,7 +184,11 @@ class DocumentProcessorService:
                 await progress_callback(final_result)
 
         except Exception as e:
-            logger.error(f"Processing failed for {document_id}: {e}")
+            logger.error(
+                f"Processing failed for {document_id}",
+                error=str(e),
+                exc_info=True
+            )
             self.processing_status[document_id] = {
                 "document_id": document_id,
                 "status": "failed",
@@ -206,127 +207,6 @@ class DocumentProcessorService:
                     logger.info(f"Cleaned up file: {file_path}")
                 except Exception as e:
                     logger.warning(f"Failed to cleanup file {file_path}: {e}")
-
-    async def _extract_text_from_file(
-        self, file_path: str
-    ) -> tuple[str, Dict[str, Any]]:
-        """Extract text from various file formats"""
-        file_extension = os.path.splitext(file_path)[1].lower()
-        filename = os.path.basename(file_path)
-
-        metadata = {
-            "filename": filename,
-            "file_type": file_extension,
-            "file_size": os.path.getsize(file_path),
-            "processing_time": datetime.utcnow().isoformat(),
-        }
-
-        try:
-            if file_extension == ".pdf":
-                text, pdf_metadata = await self._extract_from_pdf(file_path)
-                metadata.update(pdf_metadata)
-                return text, metadata
-
-            elif file_extension in [".doc", ".docx"]:
-                text, doc_metadata = await self._extract_from_docx(file_path)
-                metadata.update(doc_metadata)
-                return text, metadata
-
-            elif file_extension == ".txt":
-                async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
-                    text = await f.read()
-                metadata.update({"pages": 1, "word_count": len(text.split())})
-                return text, metadata
-
-            elif file_extension in [".png", ".jpg", ".jpeg"]:
-                # For images, you could add OCR here using pytesseract
-                metadata.update({"type": "image", "ocr_available": False})
-                return (
-                    "Image file uploaded - OCR not implemented in this demo",
-                    metadata,
-                )
-
-            else:
-                return f"Unsupported file type: {file_extension}", metadata
-
-        except Exception as e:
-            logger.error(f"Text extraction failed for {file_path}: {e}")
-            return f"Error extracting text: {str(e)}", metadata
-
-    async def _extract_from_pdf(self, file_path: str) -> tuple[str, Dict[str, Any]]:
-        """Extract text from PDF file using pdfplumber (better extraction)"""
-        text = ""
-        metadata = {"pages": 0, "word_count": 0}
-
-        try:
-            if pdfplumber:
-                # Use pdfplumber (better for complex PDFs)
-                with pdfplumber.open(file_path) as pdf:
-                    metadata["pages"] = len(pdf.pages)
-                    page_texts = []
-                    for page_num, page in enumerate(pdf.pages):
-                        try:
-                            page_text = page.extract_text() or ""
-                            page_texts.append(
-                                f"--- Page {page_num + 1} ---\n{page_text}"
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to extract text from page {page_num + 1}: {e}"
-                            )
-                            page_texts.append(
-                                f"--- Page {page_num + 1} ---\n[Text extraction failed]"
-                            )
-                    text = "\n".join(page_texts)
-            else:
-                # Fallback to PyPDF2
-                import PyPDF2
-
-                with open(file_path, "rb") as file:
-                    pdf_reader = PyPDF2.PdfReader(file)
-                    metadata["pages"] = len(pdf_reader.pages)
-                    for page_num, page in enumerate(pdf_reader.pages):
-                        try:
-                            page_text = page.extract_text() or ""
-                            text += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to extract text from page {page_num + 1}: {e}"
-                            )
-                            text += f"\n--- Page {page_num + 1} ---\n[Text extraction failed]\n"
-
-            # Clean up text: remove excessive whitespace while preserving structure
-            text = re.sub(r"[ \t]+", " ", text)  # Multiple spaces/tabs to single space
-            text = re.sub(r"\n{3,}", "\n\n", text)  # Max 2 newlines in a row
-            text = text.strip()
-
-            metadata["word_count"] = len(text.split())
-            return text, metadata
-
-        except Exception as e:
-            logger.error(f"PDF extraction failed: {e}")
-            return f"PDF extraction error: {str(e)}", metadata
-
-    async def _extract_from_docx(self, file_path: str) -> tuple[str, Dict[str, Any]]:
-        """Extract text from DOCX file"""
-        try:
-            doc = DocxDocument(file_path)
-            text = ""
-
-            for paragraph in doc.paragraphs:
-                text += paragraph.text + "\n"
-
-            metadata = {
-                "pages": 1,  # DOCX doesn't have clear page boundaries
-                "paragraphs": len(doc.paragraphs),
-                "word_count": len(text.split()),
-            }
-
-            return text.strip(), metadata
-
-        except Exception as e:
-            logger.error(f"DOCX extraction failed: {e}")
-            return f"DOCX extraction error: {str(e)}", {"pages": 0, "word_count": 0}
 
     async def _update_progress(
         self,

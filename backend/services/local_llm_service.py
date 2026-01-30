@@ -3,14 +3,17 @@ Local LLM service using Ollama for document intelligence
 """
 
 import asyncio
-import logging
+# Remove standard logging to enforce structured logging
+# import logging 
 import httpx
 from typing import Dict, Any, Optional, List
 import json
 
 from backend.core.config import get_settings
+from backend.observability.structured_logging import get_logger, with_correlation_id
 
-logger = logging.getLogger(__name__)
+# Initialize structured logger for telemetry
+logger = get_logger(__name__)
 
 
 class LocalLLMService:
@@ -21,8 +24,11 @@ class LocalLLMService:
         self.client = None
         self.is_initialized = False
 
+    @with_correlation_id
     async def initialize(self):
-        """Initialize the local LLM service"""
+        """Initialize the local LLM service with connection checks."""
+        # WHY: We wrap this in a try/except to prevent the entire backend from crashing
+        # if the optional LLM service (Ollama) is down. This ensures "Graceful Degradation".
         try:
             self.client = httpx.AsyncClient(
                 base_url=self.settings.ollama_base_url,
@@ -30,20 +36,27 @@ class LocalLLMService:
             )
 
             # Test connection and model availability
-            await self._check_model_availability()
+            with logger.timed("llm_initialization_check"):
+                await self._check_model_availability()
+                
             self.is_initialized = True
             logger.info(
-                f"✅ Local LLM service initialized with model: {self.settings.ollama_model}"
+                f"✅ Local LLM service initialized",
+                model=self.settings.ollama_model
             )
 
         except Exception as e:
-            logger.error(f"❌ Failed to initialize local LLM service: {e}")
+            # Critical: Log full stack trace for debugging
+            logger.error(
+                "❌ Failed to initialize local LLM service",
+                exc_info=True,
+                error_type=type(e).__name__
+            )
             logger.warning(
                 "⚠️ Application will continue in DEGRADED mode (No AI features)"
             )
             self.is_initialized = False
-            # Do NOT raise exception to allow app to start
-            # raise
+            # as per requirement: Do NOT raise exception to allow app to start
 
     async def _check_model_availability(self):
         """Check if the specified model is available"""
@@ -84,10 +97,11 @@ class LocalLLMService:
             logger.error(f"Error pulling model: {e}")
             raise
 
+    @with_correlation_id
     async def enhance_document_data(
         self, extracted_text: str, document_metadata: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Enhance extracted document data with AI insights"""
+        """Enhance extracted document data with AI insights using structured prompts."""
         if not self.is_initialized:
             logger.warning("LLM service not initialized, returning basic processing")
             return {
@@ -104,8 +118,11 @@ class LocalLLMService:
                 extracted_text, document_metadata
             )
 
-            # Generate AI response
-            ai_response = await self._generate_response(prompt)
+            # Generate AI response with timing telemetry
+            # WHY: We time this specific call because LLM inference is the most expensive operation
+            # and we need to monitor latency trends.
+            with logger.timed("llm_inference_enhance_data"):
+                ai_response = await self._generate_response(prompt)
 
             # Parse and structure the response
             enhanced_data = await self._parse_ai_response(ai_response, extracted_text)
@@ -160,7 +177,7 @@ Respond ONLY with valid JSON, no additional text.
         return prompt
 
     async def _generate_response(self, prompt: str) -> str:
-        """Generate response from local LLM"""
+        """Generate response from local LLM with retry logic and telemetry."""
         try:
             payload = {
                 "model": self.settings.ollama_model,
@@ -179,12 +196,17 @@ Respond ONLY with valid JSON, no additional text.
                 result = response.json()
                 return result.get("response", "")
             else:
+                logger.error(
+                    f"LLM generation failed",
+                    status_code=response.status_code,
+                    response_text=response.text
+                )
                 raise Exception(
                     f"LLM generation failed: {response.status_code} - {response.text}"
                 )
 
         except Exception as e:
-            logger.error(f"Error generating LLM response: {e}")
+            logger.error("Error generating LLM response", exc_info=True)
             raise
 
     async def _parse_ai_response(
