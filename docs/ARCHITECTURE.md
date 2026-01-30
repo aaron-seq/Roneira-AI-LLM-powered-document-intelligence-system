@@ -1,208 +1,137 @@
-# Document Intelligence System - Software Architecture
+# System Architecture
 
-## System Overview
+## Overview
 
-Enterprise-grade document processing system combining Azure AI services with advanced language models for document extraction, analysis, and structured information retrieval.
+This document outlines the architectural design of the Roneira Document Intelligence System, following the C4 Model (Context, Containers, Components).
 
-```mermaid
-graph TB
-    subgraph "Level 1: System Context"
-        WEB[Web Application]
-        API_CLIENT[API Clients]
-    end
+## 1. System Context (Level 1)
 
-    subgraph "Level 2: Containers"
-        FASTAPI[FastAPI Application]
-        AUTH[Authentication Service]
-        DOC_INTEL[Document Intelligence Service]
-    end
-        RATE_LIMIT[Rate Limiter]
-        AUTH[Authentication Service]
-    end
-
-    subgraph "Core Services"
-        DOC_INTEL[Document Intelligence Service]
-        CACHE[Cache Service]
-        WS_MGR[WebSocket Manager]
-    end
-
-    subgraph "RAG Pipeline"
-        TEXT_SPLIT[Text Splitter]
-        EMBED[Embedding Service]
-        VECTOR[Vector Store]
-        RETRIEVAL[Retrieval Service]
-        MEMORY[Memory Service]
-        PROMPT[Prompt Service]
-        CHAT[Chat Service]
-        GUARD[Guardrail Service]
-    end
-
-    subgraph "External Services"
-        AZURE_DOC[Azure Document Intelligence]
-        AZURE_OPENAI[Azure OpenAI]
-        OLLAMA[Ollama LLM]
-    end
-
-    subgraph "Data Layer"
-        REDIS[(Redis Cache)]
-        POSTGRES[(PostgreSQL/SQLite)]
-        CHROMA[(ChromaDB Vector Store)]
-    end
-
-    WEB --> FASTAPI
-    API_CLIENT --> FASTAPI
-    FASTAPI --> RATE_LIMIT
-    FASTAPI --> AUTH
-    FASTAPI --> DOC_INTEL
-    FASTAPI --> CACHE
-    FASTAPI --> WS_MGR
-
-    DOC_INTEL --> AZURE_DOC
-    DOC_INTEL --> TEXT_SPLIT
-    TEXT_SPLIT --> EMBED
-    EMBED --> VECTOR
-    VECTOR --> RETRIEVAL
-    RETRIEVAL --> CHAT
-    MEMORY --> CHAT
-    PROMPT --> CHAT
-    GUARD --> CHAT
-    CHAT --> AZURE_OPENAI
-    CHAT --> OLLAMA
-
-    CACHE --> REDIS
-    DOC_INTEL --> POSTGRES
-    VECTOR --> CHROMA
-```
-
----
-
-## Component Architecture
-
-### API Layer (`app/`)
-
-| Component | File | Purpose |
-|-----------|------|---------|
-| Main Application | `app/main.py` | FastAPI application, routes, middleware |
-| Authentication | `app/core/authentication.py` | JWT token management |
-| Database | `app/core/database_manager.py` | Async database connections |
-| WebSocket | `app/core/websocket_manager.py` | Real-time updates |
-| Cache Service | `app/services/cache_service.py` | Redis/memory caching |
-| Document Service | `app/services/document_intelligence_service.py` | Document processing |
-
-### RAG Pipeline (`backend/`)
-
-| Component | File | Purpose |
-|-----------|------|---------|
-| Text Splitter | `backend/services/text_splitter_service.py` | Document chunking |
-| Embeddings | `backend/services/embedding_service.py` | Vector embeddings |
-| Vector Store | `backend/services/vector_store_service.py` | Similarity search |
-| Retrieval | `backend/services/retrieval_service.py` | Context retrieval |
-| Memory | `backend/services/memory_service.py` | Conversation history |
-| Prompt | `backend/services/prompt_service.py` | Prompt templates |
-| Chat | `backend/services/chat_service.py` | LLM integration |
-| Guardrails | `backend/services/guardrail_service.py` | Content safety |
-
----
-
-## Data Flow
+High-level view of how the system interacts with users and external systems.
 
 ```mermaid
-sequenceDiagram
-    participant Client
-    participant API
-    participant DocService
-    participant Cache
-    participant RAG
-    participant LLM
+C4Context
+    title System Context Diagram for Roneira AI
 
-    Client->>API: Upload Document
-    API->>Cache: Store Status (queued)
-    API-->>Client: Document ID
-    
-    API->>DocService: Process Document
-    DocService->>DocService: Extract Text
-    DocService->>RAG: Split & Embed
-    RAG->>RAG: Store in Vector DB
-    DocService->>Cache: Update Status (completed)
-    
-    Client->>API: Query Document
-    API->>RAG: Retrieve Context
-    RAG->>LLM: Generate Response
-    LLM-->>API: Response
-    API-->>Client: Answer
+    Person(user, "User", "A user utilizing the Roneira system for document analysis.")
+    System(roneira, "Roneira AI System", "Platform for intelligent document processing and specific insights.")
+
+    System_Ext(ollama, "Ollama (Local LLM)", "Provides local inference capabilities.")
+    System_Ext(email, "Email System", "Sends notifications and reports (optional).")
+
+    Rel(user, roneira, "Uploads documents, views insights", "HTTPS")
+    Rel(roneira, ollama, "Sends text for inference", "HTTP/JSON")
+    Rel(roneira, email, "Sends emails", "SMTP")
 ```
 
----
+## 2. Container Diagram (Level 2)
 
-## Deployment Architecture
+The high-level technical building blocks.
 
 ```mermaid
-graph LR
-    subgraph "Cloud Platforms"
-        RAILWAY[Railway]
-        RENDER[Render]
-        VERCEL[Vercel]
-    end
+C4Container
+    title Container Diagram for Roneira AI
 
-    subgraph "Container"
-        DOCKER[Docker Image]
-        GUNICORN[Gunicorn]
-        UVICORN[Uvicorn Workers]
-    end
+    Person(user, "User", "End user")
 
-    subgraph "CI/CD"
-        GITHUB[GitHub Actions]
-        TESTS[Tests & Linting]
-        BUILD[Docker Build]
-        DEPLOY[Deploy]
-    end
+    Container_Boundary(c1, "Roneira AI System") {
+        Container(spa, "Single Page Application", "React, Vite, TypeScript", "Provides dashboard and upload UI.")
+        Container(api, "API Gateway / Backend", "Python, FastAPI", "Handles requests, document processing, and business logic.")
+        ContainerDb(db, "Relational Database", "SQLite/PostgreSQL", "Stores user data, metadata, and processing status.")
+        ContainerDb(vector, "Vector Store", "ChromaDB/FAISS", "Stores document embeddings for semantic search.")
+        Container(worker, "Background Worker", "AsyncIO/Celery", "Handles heavy document parsing and OCR tasks.")
+    }
 
-    GITHUB --> TESTS
-    TESTS --> BUILD
-    BUILD --> DEPLOY
-    DEPLOY --> RAILWAY
-    DEPLOY --> RENDER
-    DEPLOY --> VERCEL
-    
-    DOCKER --> GUNICORN
-    GUNICORN --> UVICORN
+    System_Ext(ollama, "Ollama", "Local LLM Inference Engine")
+
+    Rel(user, spa, "Uses", "HTTPS")
+    Rel(spa, api, "API Calls", "JSON/HTTPS")
+    Rel(api, db, "Reads/Writes", "SQL")
+    Rel(api, vector, "Reads/Writes", "Vector API")
+    Rel(api, ollama, "Inference Request", "HTTP")
+    Rel(api, worker, "Dispatches tasks", "In-Process/Queue")
 ```
 
----
+## 3. Component Diagram (Level 3) - Backend API
 
-## Configuration
+Drilling down into the FastAPI Backend structure.
 
-### Environment Variables
+```mermaid
+C4Component
+    title Component Diagram - Backend API
 
-| Category | Variables |
-|----------|-----------|
-| Application | `ENVIRONMENT`, `SECRET_KEY`, `DEBUG` |
-| Azure | `AZURE_OPENAI_API_KEY`, `AZURE_DOCUMENT_INTELLIGENCE_KEY` |
-| Database | `DATABASE_URL`, `REDIS_URL` |
-| LLM | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` |
+    Container(api, "API Application", "FastAPI", "Main entry point.")
 
-### Directory Structure
+    Component(auth, "Auth Controller", "FastAPI Router", "Handles login and token generation.")
+    Component(doc_ctrl, "Document Controller", "FastAPI Router", "Handles document uploads and status checks.")
+    Component(chat_ctrl, "Chat Controller", "FastAPI Router", "Handles RAG chat and search.")
+    Component(sys_ctrl, "System Controller", "FastAPI Router", "Health checks and dashboard metrics.")
 
+    Component(doc_service, "Document Service (Block)", "Python Class", "Orchestrates parsing, extraction, and storage.")
+    Component(llm_service, "LLM Service (Block)", "Python Class", "Manages interaction with Ollama and prompts.")
+
+    Component(parser, "PDF Parser (Helper)", "Python Module", "Extracts text from PDFs.")
+    Component(telemetry, "Telemetry (Util)", "Python Module", "Structured logging and metrics.")
+
+    Rel(api, auth, "Routes to")
+    Rel(api, doc_ctrl, "Routes to")
+    Rel(api, chat_ctrl, "Routes to")
+    Rel(api, sys_ctrl, "Routes to")
+
+    Rel(doc_ctrl, doc_service, "Calls")
+    Rel(doc_service, parser, "Uses")
+    Rel(doc_service, llm_service, "Uses")
+    Rel(doc_service, telemetry, "Emits data to")
 ```
-project/
-├── app/                    # Main FastAPI application
-│   ├── core/              # Authentication, database, WebSocket
-│   └── services/          # Document processing, caching
-├── backend/               # RAG pipeline services
-│   ├── core/              # Configuration
-│   ├── models/            # Data models
-│   └── services/          # RAG components
-├── tests/                 # Test suite
-├── docs/                  # Documentation
-└── deployment/            # Deployment configs
+
+## 4. Code Concepts & Directory Structure
+
+To maintain scalability and developer velocity, we strictly follow the **Block / Helpers / Utils** pattern.
+
+### 4.1 Block (Business Logic)
+
+**Location**: `backend/services/`
+
+- Contains the core _domain logic_ of the application.
+- Orchestrates data flow between controllers, data access, and external services.
+- **Rules**:
+  - Pure Python.
+  - No direct HTTP/API framework dependencies (agnostic).
+  - Must emit telemetry.
+
+### 4.2 Helpers (Project Utilities)
+
+**Location**: `backend/models/` or `backend/helpers/`
+
+- Domain-specific utilities that are reused across blocks but are tied to _this specific project_.
+- Examples: `PDFParser`, `CostCalculator`, `PermissionChecker`.
+
+### 4.3 Utils (Shared Utilities)
+
+**Location**: `backend/utils/`
+
+- Generic, pure functions that could theoretically be packaged as a separate library.
+- Examples: `format_date`, `generate_uuid`, `encrypt_string`.
+- **Rules**:
+  - No dependencies on project business logic.
+  - Side-effect free where possible.
+
+### 4.4 Structure Map
+
+```text
+backend/
+├── main.py                 # Entry point
+├── api/                    # Controllers (Routes)
+│   └── routers/            # Route Handlers
+│       ├── auth.py
+│       ├── chat.py
+│       └── ...
+├── services/               # BLOCKS (Business Logic)
+│   ├── document_service.py
+│   └── local_llm_service.py
+├── common/                 # HELPERS & UTILS
+│   ├── helpers.py          # Project-specific helpers (Parsers)
+│   └── utils.py            # Generic shared utils
+├── core/                   # Config & Security
+├── models/                 # Data Models (Pydantic/SQLAlchemy)
+└── observability/          # Telemetry & Logging
 ```
-
----
-
-## Key Design Decisions
-
-1. **Dual Application Structure**: Separate `app/` (main API) and `backend/` (RAG pipeline) for modularity
-2. **Async-First**: All services use async/await for concurrent processing
-3. **Fallback Patterns**: Redis falls back to in-memory cache in development
-4. **Provider Abstraction**: Support for both Azure OpenAI and local Ollama LLM
-5. **Rate Limiting**: SlowAPI for request throttling protection
