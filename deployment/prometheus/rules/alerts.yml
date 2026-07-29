@@ -1,0 +1,84 @@
+# Alerting rules for the signals that actually indicate user-visible harm.
+#
+# Deliberately short. Each rule below corresponds to a failure this service
+# suffered silently before it emitted metrics at all.
+
+groups:
+  - name: roneira-availability
+    rules:
+      - alert: RoneiraApiDown
+        expr: up{job="roneira-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Document Intelligence API is not being scraped"
+          description: >-
+            Prometheus cannot reach {{ $labels.instance }}. The service is
+            either down or /api/metrics is unreachable.
+
+      - alert: RoneiraHighErrorRate
+        expr: |
+          sum(rate(roneira_http_requests_total{status=~"5.."}[5m]))
+            /
+          sum(rate(roneira_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Over 5% of requests are failing"
+          description: "5xx rate is {{ $value | humanizePercentage }} over 5m."
+
+  - name: roneira-quality
+    rules:
+      # The failure this service is most prone to: it keeps answering, but
+      # every answer is ungrounded because retrieval matches nothing.
+      - alert: RoneiraRetrievalReturningNothing
+        expr: |
+          sum(rate(roneira_retrieval_queries_total{outcome="empty"}[15m]))
+            /
+          sum(rate(roneira_retrieval_queries_total[15m])) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than half of searches return no results"
+          description: >-
+            Users are asking questions the index cannot answer. Check that
+            documents finished processing and that the embedding model loaded.
+
+      # A silent, total quality collapse: placeholder vectors mean keyword-only
+      # matching, and users are never told from the UI alone.
+      - alert: RoneiraEmbeddingsDegraded
+        expr: roneira_embedding_backend_real == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Running on the keyword-only embedding fallback"
+          description: >-
+            No semantic embedding model is loaded, so paraphrased questions
+            will not match. Install sentence-transformers or set
+            REQUIRE_REAL_EMBEDDINGS=true to fail fast instead.
+
+      - alert: RoneiraDocumentProcessingFailures
+        expr: |
+          sum(rate(roneira_documents_processed_total{status="error"}[15m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Documents are failing to process"
+          description: "Check extraction errors for {{ $labels.document_type }}."
+
+      - alert: RoneiraSlowRequests
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(roneira_http_request_latency_seconds_bucket[10m])) by (le, endpoint)
+          ) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 latency above 10s on {{ $labels.endpoint }}"

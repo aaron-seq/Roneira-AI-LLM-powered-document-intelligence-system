@@ -5,16 +5,16 @@ Provides chat completion functionality with RAG integration,
 streaming responses, and conversation management.
 """
 
-import logging
-from typing import List, Dict, Any, Optional, AsyncGenerator
-from dataclasses import dataclass
 import asyncio
-import json
+import logging
+import uuid
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from backend.services.retrieval_service import RetrievalService
+from backend.services.local_llm_service import LocalLLMService
 from backend.services.memory_service import MemoryService
 from backend.services.prompt_service import PromptService
-from backend.services.local_llm_service import LocalLLMService
+from backend.services.retrieval_service import RetrievalService
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,10 @@ class ChatService:
         prompt_service: Optional[PromptService] = None,
         llm_service: Optional[LocalLLMService] = None,
     ):
+        # The retrieval service is injected, not constructed here. When chat
+        # built its own instance it also built its own vector store, so
+        # documents indexed by the upload pipeline were invisible to chat —
+        # every RAG answer came back with zero sources.
         self.retrieval = retrieval_service or RetrievalService()
         self.memory = memory_service or MemoryService()
         self.prompts = prompt_service or PromptService()
@@ -75,6 +79,8 @@ class ChatService:
 
     async def initialize(self) -> None:
         """Initialize all component services."""
+        if self.is_initialized:
+            return
         await self.retrieval.initialize()
         await self.llm.initialize()
         self.is_initialized = True
@@ -87,6 +93,8 @@ class ChatService:
         use_rag: bool = True,
         rag_top_k: int = 5,
         document_filter: Optional[str] = None,
+        owner_id: Optional[str] = None,
+        allowed_document_ids: Optional[List[str]] = None,
     ) -> ChatResponse:
         """
         Process a chat message with optional RAG.
@@ -96,62 +104,75 @@ class ChatService:
             session_id: Conversation session ID
             use_rag: Whether to use retrieval augmentation
             rag_top_k: Number of chunks to retrieve
-            document_filter: Filter to specific document
+            document_filter: Restrict retrieval to a single document
+            owner_id: Restrict retrieval to this user's documents
+            allowed_document_ids: Explicit allow-list of retrievable documents
 
         Returns:
-            ChatResponse with generated message
+            ChatResponse with generated message and grounded citations.
         """
         if not self.is_initialized:
             await self.initialize()
 
-        # Generate session ID if not provided
-        import uuid
-
         session_id = session_id or str(uuid.uuid4())
 
-        # Store user message in memory
         await self.memory.add_user_message(session_id, message)
-
-        # Get conversation history
         history = await self.memory.get_context_messages(session_id)
 
-        # Retrieve relevant context if RAG enabled
         context = ""
-        sources = []
+        sources: List[Dict[str, Any]] = []
+        grounded = False
 
         if use_rag:
-            filter_dict = None
+            document_ids = allowed_document_ids
             if document_filter:
-                filter_dict = {"document_id": document_filter}
+                # Honour the narrower of the two: an explicit document filter
+                # can only ever restrict within what the caller may read.
+                if document_ids is not None and document_filter not in document_ids:
+                    document_ids = []
+                else:
+                    document_ids = [document_filter]
 
             retrieval_result = await self.retrieval.retrieve(
-                query=message, top_k=rag_top_k, filter_dict=filter_dict
+                query=message,
+                top_k=rag_top_k,
+                owner_id=owner_id,
+                document_ids=document_ids,
             )
 
             context = retrieval_result.combined_context
+            grounded = bool(retrieval_result.results)
             sources = [
                 {
                     "document_id": r.document_id,
                     "chunk_id": r.chunk_id,
-                    "score": r.score,
-                    "content_preview": r.content[:200] + "..."
-                    if len(r.content) > 200
-                    else r.content,
+                    "score": round(r.score, 4),
+                    "page_number": r.metadata.get("page_number"),
+                    "filename": r.metadata.get("filename"),
+                    "content_preview": (
+                        r.content[:200] + "..." if len(r.content) > 200 else r.content
+                    ),
                 }
                 for r in retrieval_result.results
             ]
 
-        # Build prompt with context
         chat_messages = self.prompts.build_chat_messages(
             user_message=message,
             context=context if context else None,
             history=history[:-1] if len(history) > 1 else None,  # Exclude current
         )
 
-        # Generate response
         response_text = await self._generate_response(chat_messages)
 
-        # Store assistant response in memory
+        if use_rag and not grounded:
+            # Say so rather than letting the model answer from parametric
+            # memory while the UI shows an empty citation list.
+            response_text = (
+                "I could not find anything in your indexed documents that "
+                "answers this. Answering from general knowledge instead, so "
+                "please verify independently.\n\n" + response_text
+            )
+
         await self.memory.add_assistant_message(session_id, response_text)
 
         return ChatResponse(
@@ -159,7 +180,12 @@ class ChatService:
             session_id=session_id,
             sources=sources,
             model=self.llm.settings.ollama_model,
-            usage={"context_chunks": len(sources), "history_messages": len(history)},
+            usage={
+                "context_chunks": len(sources),
+                "history_messages": len(history),
+                "grounded": grounded,
+                "embeddings_are_real": self.retrieval.embeddings_are_real,
+            },
         )
 
     async def _generate_response(self, messages: List[Dict[str, str]]) -> str:
@@ -185,9 +211,7 @@ class ChatService:
         response = await self.llm.generate_chat_response(full_prompt)
 
         return (
-            response
-            if response
-            else "I couldn't generate a response. Please try again."
+            response if response else "I couldn't generate a response. Please try again."
         )
 
     async def stream_chat(
@@ -218,19 +242,44 @@ class ChatService:
         return await self.memory.clear_session(session_id)
 
     async def index_document(
-        self, document_id: str, content: str, metadata: Optional[Dict[str, Any]] = None
+        self,
+        document_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        owner_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Index a document for RAG retrieval."""
         result = await self.retrieval.index_document(
-            document_id=document_id, content=content, metadata=metadata
+            document_id=document_id,
+            content=content,
+            metadata=metadata,
+            owner_id=owner_id,
         )
         return result.to_dict()
 
     async def search_documents(
-        self, query: str, top_k: int = 5
+        self,
+        query: str,
+        top_k: int = 5,
+        min_score: Optional[float] = None,
+        owner_id: Optional[str] = None,
+        allowed_document_ids: Optional[List[str]] = None,
+        document_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Search indexed documents."""
-        result = await self.retrieval.retrieve(query=query, top_k=top_k)
+        """Search indexed documents, scoped to what the caller may read."""
+        document_ids = allowed_document_ids
+        if document_id:
+            if document_ids is not None and document_id not in document_ids:
+                return []
+            document_ids = [document_id]
+
+        result = await self.retrieval.retrieve(
+            query=query,
+            top_k=top_k,
+            min_score=min_score,
+            owner_id=owner_id,
+            document_ids=document_ids,
+        )
         return [r.to_dict() for r in result.results]
 
     async def get_stats(self) -> Dict[str, Any]:

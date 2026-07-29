@@ -1,173 +1,177 @@
-"""Authentication service for the Document Intelligence System.
+"""JWT authentication.
 
-Provides JWT-based authentication with secure password handling
-and token management.
+The built-in users are a development convenience so the system is usable the
+moment it starts. They are *not* a user management system: see
+``docs/SECURITY.md`` for what to replace before running this with real data.
 """
 
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from __future__ import annotations
 
-from jose import jwt, JWTError
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from backend.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Password hashing context - using sha256_crypt for development compatibility
-# In production with proper bcrypt setup, use: schemes=["bcrypt"]
-pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+# pbkdf2_sha256 is in passlib's core, needs no compiled backend, and is a
+# genuine password KDF. The previous sha256_crypt choice worked but the bcrypt
+# comment above it was misleading about what was actually running.
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+
+#: Generic message for every failure mode. Distinguishing "no such user" from
+#: "wrong password" turns the login endpoint into a username oracle.
+_AUTH_FAILURE_MESSAGE = "Invalid username or password"
 
 
 class AuthService:
-    """Handles user authentication and token management.
+    """Issues and verifies JWT access tokens."""
 
-    Provides methods for password verification, JWT token creation,
-    and token validation.
-    """
-
-    def __init__(self):
+    def __init__(self, users: Optional[Dict[str, Dict[str, Any]]] = None):
         self.settings = get_settings()
-        # Demo users for development - in production use database
-        self._demo_users = {
+        self._users = users if users is not None else self._build_default_users()
+        # Pre-computed hash used to equalise timing when a username does not
+        # exist, so an attacker cannot enumerate accounts by response latency.
+        self._dummy_hash = pwd_context.hash("timing-equalisation-placeholder")
+
+    def _build_default_users(self) -> Dict[str, Dict[str, Any]]:
+        """Create the development users, honouring password overrides.
+
+        ``DEMO_USER_PASSWORD`` / ``ADMIN_USER_PASSWORD`` let a deployment change
+        these without a code edit. They are still development accounts.
+        """
+        demo_password = os.getenv("DEMO_USER_PASSWORD", "demo")
+        admin_password = os.getenv("ADMIN_USER_PASSWORD", "admin123")
+
+        if self.settings.is_production:
+            logger.warning(
+                "Built-in demo accounts are enabled in production. Replace "
+                "AuthService with a real user store before serving real data."
+            )
+
+        return {
             "demo": {
                 "username": "demo",
-                "password_hash": pwd_context.hash("demo"),
+                "password_hash": pwd_context.hash(demo_password),
                 "user_id": "demo_user_001",
                 "roles": ["user"],
             },
             "admin": {
                 "username": "admin",
-                "password_hash": pwd_context.hash("admin123"),
+                "password_hash": pwd_context.hash(admin_password),
                 "user_id": "admin_user_001",
                 "roles": ["user", "admin"],
             },
         }
 
+    # ------------------------------------------------------------- passwords
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
-        """Verify a password against its hash.
-
-        Args:
-            plain_password: Plain text password to verify.
-            hashed_password: Hashed password to compare against.
-
-        Returns:
-            True if password matches, False otherwise.
-        """
-        return pwd_context.verify(plain_password, hashed_password)
+        """Check a password against its hash."""
+        try:
+            return pwd_context.verify(plain_password, hashed_password)
+        except Exception as exc:
+            logger.warning("Password verification error: %s", exc)
+            return False
 
     def hash_password(self, password: str) -> str:
-        """Hash a password for storage.
-
-        Args:
-            password: Plain text password to hash.
-
-        Returns:
-            Hashed password string.
-        """
+        """Hash a password for storage."""
         return pwd_context.hash(password)
 
+    # ---------------------------------------------------------------- tokens
     def create_access_token(
         self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None
     ) -> str:
-        """Create a JWT access token.
+        """Mint a signed JWT.
 
         Args:
-            data: Data to encode in the token.
-            expires_delta: Optional custom expiration time.
+            data: Claims to embed. Must include ``sub``.
+            expires_delta: Lifetime override.
 
         Returns:
-            Encoded JWT token string.
+            The encoded token.
         """
-        to_encode = data.copy()
-
-        if expires_delta:
-            expire = datetime.utcnow() + expires_delta
-        else:
-            expire = datetime.utcnow() + timedelta(
-                minutes=self.settings.access_token_expire_minutes
-            )
-
-        to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": "access"})
-
-        encoded_jwt = jwt.encode(
-            to_encode, self.settings.secret_key, algorithm=self.settings.algorithm
+        now = datetime.now(timezone.utc)
+        expires = now + (
+            expires_delta or timedelta(minutes=self.settings.access_token_expire_minutes)
         )
 
-        return encoded_jwt
+        payload = {**data, "exp": expires, "iat": now, "nbf": now, "type": "access"}
+        return jwt.encode(
+            payload, self.settings.secret_key, algorithm=self.settings.algorithm
+        )
 
     def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
-        """Verify and decode a JWT token.
-
-        Args:
-            token: JWT token string to verify.
+        """Decode and validate a token.
 
         Returns:
-            Decoded token payload if valid, None otherwise.
+            The claims, or ``None`` if the token is invalid, expired, or is not
+            an access token.
         """
         try:
             payload = jwt.decode(
-                token, self.settings.secret_key, algorithms=[self.settings.algorithm]
+                token,
+                self.settings.secret_key,
+                # Pinning the algorithm is what stops an attacker presenting a
+                # token signed with "none" or with a different scheme.
+                algorithms=[self.settings.algorithm],
             )
-            return payload
-        except JWTError as e:
-            logger.warning(f"Token verification failed: {e}")
+        except JWTError as exc:
+            logger.debug("Token verification failed: %s", exc)
             return None
 
+        if payload.get("type") != "access":
+            logger.debug("Rejected token with type=%r", payload.get("type"))
+            return None
+
+        return payload
+
+    # ------------------------------------------------------------ user login
     async def authenticate_user(self, username: str, password: str) -> Dict[str, Any]:
-        """Authenticate a user and return token data.
-
-        Args:
-            username: User's username.
-            password: User's password.
-
-        Returns:
-            Dictionary containing access token and metadata.
+        """Verify credentials and return token material.
 
         Raises:
-            ValueError: If authentication fails.
+            ValueError: on any authentication failure, always with the same
+                message regardless of cause.
         """
-        # Look up user (demo implementation)
-        user = self._demo_users.get(username)
+        user = self._users.get(username)
 
-        if not user:
-            logger.warning(f"Authentication failed: user '{username}' not found")
-            raise ValueError("Invalid username or password")
+        if user is None:
+            # Still perform a hash comparison so the timing matches the
+            # valid-username path.
+            self.verify_password(password, self._dummy_hash)
+            logger.info("Authentication failed for unknown user %r", username)
+            raise ValueError(_AUTH_FAILURE_MESSAGE)
 
         if not self.verify_password(password, user["password_hash"]):
-            logger.warning(f"Authentication failed: invalid password for '{username}'")
-            raise ValueError("Invalid username or password")
+            logger.info("Authentication failed for user %r", username)
+            raise ValueError(_AUTH_FAILURE_MESSAGE)
 
-        # Create access token
-        token_data = {
-            "sub": user["user_id"],
-            "username": username,
-            "roles": user["roles"],
-        }
+        access_token = self.create_access_token(
+            {
+                "sub": user["user_id"],
+                "username": user["username"],
+                "roles": user["roles"],
+            }
+        )
 
-        access_token = self.create_access_token(token_data)
-
-        logger.info(f"User '{username}' authenticated successfully")
-
+        logger.info("User %r authenticated", username)
         return {
             "access_token": access_token,
             "token_type": "bearer",
             "expires_in": self.settings.access_token_expire_minutes * 60,
             "user_id": user["user_id"],
+            "username": user["username"],
+            "roles": list(user["roles"]),
         }
 
     async def get_current_user(self, token: str) -> Optional[Dict[str, Any]]:
-        """Get the current user from a token.
-
-        Args:
-            token: JWT access token.
-
-        Returns:
-            User data dictionary if token is valid, None otherwise.
-        """
+        """Resolve a token to a user record, or ``None`` when invalid."""
         payload = self.verify_token(token)
-
         if not payload:
             return None
 
@@ -176,3 +180,8 @@ class AuthService:
             "username": payload.get("username"),
             "roles": payload.get("roles", []),
         }
+
+    @property
+    def usernames(self) -> List[str]:
+        """Names of the configured users (for diagnostics, never for auth)."""
+        return list(self._users)

@@ -1,0 +1,14 @@
+# Loads every dashboard JSON mounted at /var/lib/grafana/dashboards.
+apiVersion: 1
+
+providers:
+  - name: roneira
+    orgId: 1
+    folder: Roneira
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

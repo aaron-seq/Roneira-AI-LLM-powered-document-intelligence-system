@@ -5,11 +5,11 @@ Provides multiple text splitting strategies for preparing documents for
 embedding and vector storage in a RAG pipeline.
 """
 
-import re
 import logging
-from typing import List, Dict, Any, Optional, Callable
-from dataclasses import dataclass
+import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -259,9 +259,7 @@ class TextSplitterService:
     Provides a unified interface for different splitting strategies.
     """
 
-    def __init__(
-        self, default_chunk_size: int = 1000, default_chunk_overlap: int = 200
-    ):
+    def __init__(self, default_chunk_size: int = 1000, default_chunk_overlap: int = 200):
         self.default_chunk_size = default_chunk_size
         self.default_chunk_overlap = default_chunk_overlap
         self.is_initialized = True

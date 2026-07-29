@@ -4,10 +4,10 @@ Provides WebSocket connection management for broadcasting
 document processing progress and status updates to clients.
 """
 
-import logging
 import json
-from typing import Dict, List, Optional, Any
+import logging
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from fastapi import WebSocket
 
@@ -198,9 +198,7 @@ class WebSocketManager:
         if websocket:
             await self._send_message(websocket, message)
 
-    async def _send_message(
-        self, websocket: WebSocket, message: Dict[str, Any]
-    ) -> None:
+    async def _send_message(self, websocket: WebSocket, message: Dict[str, Any]) -> None:
         """Send a message through a WebSocket connection.
 
         Args:

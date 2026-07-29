@@ -7,9 +7,9 @@ validation for safe AI interactions.
 
 import logging
 import re
-from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,12 @@ class PIIDetector:
         """Mask PII in text."""
         masked = text
         for pii_type, pattern in self.PATTERNS.items():
+            # pii_type is bound as a default argument rather than captured:
+            # re.sub happens to call this eagerly, but a late-binding closure
+            # over a loop variable would silently mask every match with the
+            # last pattern's rule if that ever changed.
             masked = pattern.sub(
-                lambda m: self._mask_value(m.group(), pii_type), masked
+                lambda m, kind=pii_type: self._mask_value(m.group(), kind), masked
             )
         return masked
 

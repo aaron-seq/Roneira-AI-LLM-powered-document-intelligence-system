@@ -1,139 +1,127 @@
-# ==============================================================================
-# Docker Compose Configuration for LLM Document Intelligence System
+# Local development stack.
 #
-# This file defines the services, networks, and volumes for the application,
-# making it easy to run the entire stack with a single command. It is
-# designed to support different environments (development, production).
-# ==============================================================================
-
-version: '3.8'
+#   docker compose up
+#
+# Brings up the API, the React frontend and PostgreSQL. Ollama is expected on
+# the host (see README) and reached via host.docker.internal; the API degrades
+# to extraction-and-search-only if it is not running, rather than failing.
+#
+# Optional monitoring stack:  docker compose --profile observability up
 
 services:
-  # ------------------------------------------------------------------------------
-  # Frontend Service
-  # ------------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ${DOCKER_BUILD_TARGET:-development}
+    container_name: roneira-api
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      # asyncpg is in requirements.txt; without it this URL fails at startup
+      # with "the asyncio extension requires an async driver".
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-document_intelligence}
+      SECRET_KEY: ${SECRET_KEY:-local-development-secret-key-change-me-0123456789}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      UPLOAD_DIRECTORY: /app/uploads
+      VECTOR_STORE_PATH: /app/chroma_db
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
+    volumes:
+      # Source is mounted for hot reload in the development target. The named
+      # volumes keep uploads and the vector index out of the bind mount so
+      # they survive a rebuild and do not litter the working tree.
+      - .:/app
+      - api_uploads:/app/uploads
+      - api_vectors:/app/chroma_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [roneira]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: llm-doc-intelligence-frontend
+    container_name: roneira-frontend
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
-      - app
-    networks:
-      - llm_network
-
-  # ------------------------------------------------------------------------------
-  # Application Service (Backend)
-
-  #
-  # This service runs the FastAPI backend application.
-  # ------------------------------------------------------------------------------
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      # The 'target' specifies which stage from the Dockerfile to build.
-      target: ${DOCKER_BUILD_TARGET:-development}
-    container_name: llm-doc-intelligence-app
-    restart: unless-stopped
-    ports:
-      # Maps port 8000 on the host to port 8000 in the container.
-      - "${APP_PORT:-8000}:8000"
-      - "5678:5678"
-    environment:
-      # Environment variables are passed to the container.
-      # It's recommended to use a .env file for sensitive data.
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-document_intelligence}
-      - REDIS_URL=redis://${REDIS_PASSWORD:-password}@redis:6379/0
-      - SECRET_KEY=${SECRET_KEY:-a-dev-secret-key}
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-    volumes:
-      # Mounts the current directory to /app in the container for development.
-      - .:/app
-    depends_on:
-      # Ensures that the database and Redis are running before the app starts.
-      postgres:
+      api:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - llm_network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    # Health check to ensure the service is running correctly.
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    networks: [roneira]
 
-  # ------------------------------------------------------------------------------
-  # PostgreSQL Database Service
-  #
-  # This service runs the PostgreSQL database for data storage.
-  # ------------------------------------------------------------------------------
   postgres:
-    image: postgres:15-alpine
-    container_name: llm-doc-intelligence-postgres
+    image: postgres:16-alpine
+    container_name: roneira-postgres
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=${POSTGRES_DB:-document_intelligence}
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-document_intelligence}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     volumes:
-      # Persists database data on the host machine.
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    networks:
-      - llm_network
+    # Deliberately not published to the host: a database reachable on
+    # 0.0.0.0:5432 with a default password is the most common way a
+    # development stack gets compromised. Uncomment for direct psql access.
+    # ports:
+    #   - "5432:5432"
+    networks: [roneira]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ------------------------------------------------------------------------------
-  # Redis Service
-  #
-  # This service runs Redis for caching and message queuing.
-  # ------------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: llm-doc-intelligence-redis
+  # --- Observability (optional profile) -----------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: roneira-prometheus
+    profiles: [observability]
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:-password}
-    volumes:
-      # Persists Redis data on the host machine.
-      - redis_data:/data
     ports:
-      - "${REDIS_PORT:-6379}:6379"
-    networks:
-      - llm_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-password}", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+      - "9090:9090"
+    volumes:
+      - ./deployment/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks: [roneira]
 
-# ==============================================================================
-# Networks
-#
-# Defines the network that the services will use to communicate.
-# ==============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: roneira-grafana
+    profiles: [observability]
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deployment/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./deployment/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus]
+    networks: [roneira]
+
 networks:
-  llm_network:
+  roneira:
     driver: bridge
 
-# ==============================================================================
-# Volumes
-#
-# Defines the named volumes for data persistence.
-# ==============================================================================
 volumes:
   postgres_data:
-  redis_data:
+  api_uploads:
+  api_vectors:
+  prometheus_data:
+  grafana_data:

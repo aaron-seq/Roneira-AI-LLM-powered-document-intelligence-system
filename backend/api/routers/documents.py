@@ -1,173 +1,268 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks, status, WebSocket, WebSocketDisconnect
-from typing import Optional
-from backend.Models.responses import DocumentUploadResponse, DocumentStatusResponse
-from backend.services.document_processor import DocumentProcessorService
-from backend.services.websocket_manager import WebSocketManager
-from backend.api.dependencies import get_document_processor, get_websocket_manager
-from backend.core.config import get_settings
-import uuid
-import os
-import asyncio
+"""Document upload, status, retrieval and deletion endpoints.
+
+Every route is scoped to the authenticated caller: a document is only visible
+to its owner. Before ownership existed, ``GET /api/documents`` returned every
+document uploaded by anyone.
+"""
+
+from __future__ import annotations
+
 import logging
+import os
+from typing import Any, Dict, Optional
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
+from fastapi.responses import FileResponse
+
+from backend.api.dependencies import get_document_processor, get_websocket_manager
+from backend.api.security import CurrentUser, get_current_user
+from backend.models.responses import (
+    DocumentDeleteResponse,
+    DocumentDetailResponse,
+    DocumentListResponse,
+    DocumentStatusResponse,
+    DocumentUploadResponse,
+)
+from backend.services.document_processor import DocumentProcessorService
+from backend.services.file_validation import (
+    ALLOWED_EXTENSIONS,
+    FileValidationError,
+)
+from backend.services.websocket_manager import WebSocketManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/upload", response_model=DocumentUploadResponse)
-async def upload_document_for_processing(
+
+@router.post(
+    "/upload",
+    response_model=DocumentUploadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Upload a document for processing",
+)
+async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Document file to process"),
     extract_tables: bool = Form(default=True),
     extract_images: bool = Form(default=False),
     enhance_with_ai: bool = Form(default=True),
-    document_processor: DocumentProcessorService = Depends(get_document_processor),
-    websocket_manager: WebSocketManager = Depends(get_websocket_manager)
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+    websocket_manager: WebSocketManager = Depends(get_websocket_manager),
 ) -> DocumentUploadResponse:
-    """Enhanced document upload with comprehensive validation"""
+    """Accept a document, store it, and queue it for processing.
 
-    if not file.filename:
+    Returns 202 with a ``document_id``; poll ``/{document_id}/status`` or
+    subscribe over the websocket for progress.
+    """
+    options: Dict[str, Any] = {
+        "extract_tables": extract_tables,
+        "extract_images": extract_images,
+        "enhance_with_ai": enhance_with_ai,
+    }
+
+    try:
+        document_id, stored = await processor.accept_upload(
+            file=file, owner_id=user.user_id, processing_options=options
+        )
+    except FileValidationError as exc:
+        # Validation messages are written for the user and safe to return.
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except Exception as exc:
+        logger.exception("Upload failed for user %s", user.user_id)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="No file provided"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Document upload failed. Please try again.",
+        ) from exc
+
+    background_tasks.add_task(
+        _process_document_task,
+        processor,
+        websocket_manager,
+        document_id,
+        user.user_id,
+        stored.path,
+        options,
+        os.path.basename(file.filename),
+    )
+
+    return DocumentUploadResponse(
+        document_id=document_id,
+        status="queued",
+        message="Document accepted and queued for processing",
+        filename=os.path.basename(file.filename),
+        size_bytes=stored.size_bytes,
+        checksum=stored.checksum,
+        detected_type=stored.detected_type,
+    )
+
+
+@router.get(
+    "",
+    response_model=DocumentListResponse,
+    summary="List your documents",
+)
+async def list_documents(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    status_filter: Optional[str] = Query(
+        default=None,
+        description="Filter by status: queued, processing, completed, failed",
+    ),
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+) -> DocumentListResponse:
+    """Return a page of the caller's documents, newest first."""
+    try:
+        documents, total = await processor.list_documents(
+            limit=limit,
+            offset=offset,
+            status_filter=status_filter,
+            owner_id=user.user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    return DocumentListResponse(
+        documents=documents,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=offset + len(documents) < total,
+    )
+
+
+@router.get(
+    "/{document_id}/status",
+    response_model=DocumentStatusResponse,
+    summary="Get processing status",
+)
+async def get_document_status(
+    document_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+) -> DocumentStatusResponse:
+    """Return the current processing state of one document."""
+    status_data = await processor.get_document_status(document_id, owner_id=user.user_id)
+    if not status_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+    return DocumentStatusResponse(**status_data)
+
+
+@router.get(
+    "/{document_id}",
+    response_model=DocumentDetailResponse,
+    summary="Get a document with its extracted text and analysis",
+)
+async def get_document(
+    document_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+) -> DocumentDetailResponse:
+    """Return the full processing result for one document."""
+    document = await processor.get_document(document_id, owner_id=user.user_id)
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+    return DocumentDetailResponse(**document)
+
+
+@router.get(
+    "/{document_id}/source",
+    summary="Download the original uploaded file",
+    response_class=FileResponse,
+)
+async def download_source(
+    document_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+):
+    """Return the original file so a citation can be verified against it.
+
+    Serving this through an authorized route (rather than a public static
+    mount) is what keeps one tenant's documents out of another's reach.
+    """
+    document = await processor.repository.get(document_id, owner_id=user.user_id)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+    if not document.storage_path or not os.path.exists(document.storage_path):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=(
+                "The source file is no longer retained for this document. "
+                "Source retention is controlled by RETAIN_SOURCE_FILES and "
+                "SOURCE_RETENTION_DAYS."
+            ),
         )
 
-    allowed_extensions = {".pdf", ".doc", ".docx", ".txt", ".png", ".jpg", ".jpeg"}
-    file_extension = os.path.splitext(file.filename)[1].lower()
+    return FileResponse(
+        path=document.storage_path,
+        filename=document.filename,
+        media_type=document.content_type or "application/octet-stream",
+        # Never render an uploaded document inline in the browser: an HTML or
+        # SVG payload served same-origin would run as our own page.
+        content_disposition_type="attachment",
+    )
 
-    if file_extension not in allowed_extensions:
+
+@router.delete(
+    "/{document_id}",
+    response_model=DocumentDeleteResponse,
+    summary="Delete a document and its index entries",
+)
+async def delete_document(
+    document_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+) -> DocumentDeleteResponse:
+    """Remove a document, its chunks, its vectors, and its stored file."""
+    deleted = await processor.delete_document(document_id, owner_id=user.user_id)
+    if not deleted:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file type: {file_extension}. Allowed: {', '.join(allowed_extensions)}",
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
+    return DocumentDeleteResponse(document_id=document_id, deleted=True)
+
+
+@router.get("/formats/supported", summary="List accepted upload formats")
+async def supported_formats() -> Dict[str, Any]:
+    """Report what the server will accept, so clients need not guess."""
+    from backend.core.config import get_settings
 
     settings = get_settings()
-    content = await file.read()
-    await file.seek(0)
-    
-    if len(content) > settings.max_file_size:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large. Maximum size: {settings.max_file_size // (1024 * 1024)}MB",
-        )
+    return {
+        "extensions": sorted(ALLOWED_EXTENSIONS),
+        "max_file_size_bytes": settings.max_file_size,
+        "max_file_size_mb": settings.max_file_size // (1024 * 1024),
+    }
 
-    document_id = str(uuid.uuid4())
-
-    try:
-        # Save file securely
-        file_path = await document_processor.save_uploaded_file(
-            file,
-            document_id,
-            "demo_user",  # In production, get from JWT token
-        )
-
-        # Initialize status synchronously
-        document_processor.initialize_status(document_id, file.filename)
-
-        # Queue for background processing
-        processing_options = {
-            "extract_tables": extract_tables,
-            "extract_images": extract_images,
-            "enhance_with_ai": enhance_with_ai,
-            "user_id": "demo_user",
-        }
-
-        # Need to define the background task function wrapper or import it
-        # The background task needs access to services.
-        # Since BackgroundTasks runs after response, we need to pass the service instance or ensure it's available.
-        # Ideally, we pass the method of the bound instance.
-        
-        background_tasks.add_task(
-            _process_document_task,
-            document_processor,
-            websocket_manager,
-            document_id,
-            file_path,
-            processing_options,
-            file.filename,
-        )
-
-        return DocumentUploadResponse(
-            document_id=document_id,
-            status="queued",
-            message="Document uploaded successfully and queued for processing",
-            filename=file.filename,
-            upload_timestamp=datetime.utcnow(),
-        )
-
-    except Exception as e:
-        logger.error(f"Upload error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Document upload failed: {str(e)}",
-        )
-
-@router.get("/{document_id}/status", response_model=DocumentStatusResponse)
-async def get_document_processing_status(
-    document_id: str,
-    document_processor: DocumentProcessorService = Depends(get_document_processor)
-) -> DocumentStatusResponse:
-    """Get real-time document processing status"""
-    try:
-        status_data = await document_processor.get_document_status(document_id)
-
-        if not status_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
-            )
-
-        return DocumentStatusResponse(**status_data)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Status retrieval error for document {document_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unable to retrieve document status",
-        )
-
-@router.get("/")
-async def list_documents(
-    limit: int = 10, 
-    offset: int = 0, 
-    status_filter: Optional[str] = None,
-    document_processor: DocumentProcessorService = Depends(get_document_processor)
-):
-    """List processed documents with pagination"""
-    try:
-        documents = await document_processor.list_documents(
-            limit=limit, offset=offset, status_filter=status_filter
-        )
-
-        return {
-            "documents": documents,
-            "total": len(documents),
-            "limit": limit,
-            "offset": offset,
-        }
-    except Exception as e:
-        logger.error(f"Document listing error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unable to retrieve documents",
-        )
-
-# NOTE: WebSockets usually go on the main app or a router, but here using router is fine.
-# The endpoint path is relative to the router prefix. Main.py mounted it at /documents
-# So ws url will be /api/documents/ws/documents/{client_id} -> A bit repetitive.
-# In main.py it was /ws/documents/{client_id}.
-# I should probably put this websocket route in a separate place or keep the path clean.
-# Let's assign path "/ws/{client_id}" inside this router. 
-# Caller: /api/documents/ws/... might be confusing. 
-# BUT, main.py has `api_router` with prefix `/documents`.
-# I'll stick to specific WS route or put it in general if needed.
-# Let's put it here for now: `/ws/{client_id}`.
 
 @router.websocket("/ws/{client_id}")
 async def websocket_document_updates(
-    websocket: WebSocket, 
+    websocket: WebSocket,
     client_id: str,
-    websocket_manager: WebSocketManager = Depends(get_websocket_manager)
+    websocket_manager: WebSocketManager = Depends(get_websocket_manager),
 ):
-    """Enhanced WebSocket for real-time updates"""
+    """Stream processing progress to a connected client."""
     try:
         await websocket_manager.connect(websocket, client_id)
         while True:
@@ -175,31 +270,39 @@ async def websocket_document_updates(
             await websocket_manager.handle_client_message(client_id, message)
     except WebSocketDisconnect:
         await websocket_manager.disconnect(client_id)
-    except Exception as e:
-        logger.error(f"WebSocket error for client {client_id}: {e}")
+    except Exception as exc:
+        logger.warning("WebSocket error for client %s: %s", client_id, exc)
         await websocket_manager.disconnect(client_id)
 
 
-# Internal Task Wrapper
 async def _process_document_task(
     processor: DocumentProcessorService,
     ws_manager: WebSocketManager,
-    document_id: str, 
-    file_path: str, 
-    options: dict, 
-    filename: str
-):
-    """Background task wrapper"""
-    try:
-        await processor.process_document_with_ai(
+    document_id: str,
+    owner_id: str,
+    file_path: str,
+    options: Dict[str, Any],
+    filename: str,
+) -> None:
+    """Background entry point for the processing pipeline."""
+
+    async def progress(update: Dict[str, Any]) -> None:
+        # broadcast_progress takes a percentage and a stage label, not the
+        # whole status dict; passing the dict put an object where clients
+        # expect a number.
+        await ws_manager.broadcast_progress(
             document_id,
-            file_path,
-            options,
-            filename=filename,
-            progress_callback=lambda progress: asyncio.create_task(
-                ws_manager.broadcast_progress(document_id, progress)
-            ),
+            progress=int(update.get("progress", 0)),
+            stage=update.get("message"),
         )
-    except Exception as e:
-        logger.error(f"Document processing failed for {document_id}: {e}")
-        await ws_manager.broadcast_error(document_id, str(e))
+        if update.get("status") in ("completed", "failed"):
+            await ws_manager.broadcast_status(document_id, update["status"], data=update)
+
+    await processor.process_document(
+        document_id=document_id,
+        owner_id=owner_id,
+        file_path=file_path,
+        options=options,
+        filename=filename,
+        progress_callback=progress,
+    )

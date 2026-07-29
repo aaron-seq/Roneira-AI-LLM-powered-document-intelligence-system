@@ -6,12 +6,11 @@ chat interactions in RAG applications.
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime
-import uuid
-import asyncio
-from collections import OrderedDict
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

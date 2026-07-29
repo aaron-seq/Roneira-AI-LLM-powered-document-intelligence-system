@@ -33,14 +33,12 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import axios from 'axios';
+import { apiClient } from '../../api/client';
 
 // ==============================================================================
 // Roneira AI - AI Chat Interface
 // Document Intelligence with RAG (Retrieval Augmented Generation)
 // ==============================================================================
-
-const API_BASE = 'http://localhost:8000';
 
 interface DocumentReference {
     id: string;
@@ -94,7 +92,7 @@ const AIChat = () => {
     const fetchDocuments = async () => {
         try {
             // Correct endpoint for document list
-            const response = await axios.get('/api/documents?limit=100');
+            const response = await apiClient.get('/documents?limit=100');
             console.log('Fetched documents:', response.data);
             if (response.data && response.data.documents) {
                 setDocuments(response.data.documents);
@@ -104,24 +102,40 @@ const AIChat = () => {
         }
     };
 
-    // Download Document
-    const handleDownload = (docId: string, filename: string) => {
-        window.open(`/api/documents/${docId}/download`, '_blank');
-    };
+    // Download the source document behind a citation.
+    //
+    // This cannot use window.open: the endpoint requires a bearer token, and
+    // a plain navigation sends no Authorization header (the previous version
+    // also pointed at /download, which does not exist — the route is
+    // /api/documents/{id}/source). Fetching as a blob keeps the header and
+    // gives the browser a correct filename.
+    const handleDownload = async (docId: string, filename: string) => {
+        try {
+            const response = await apiClient.get(`/documents/${docId}/source`, {
+                responseType: 'blob',
+            });
 
-    // Search documents for relevant context
-    const searchDocuments = async (query: string): Promise<DocumentReference[]> => {
-        // We now rely on the backend query endpoint to return sources, 
-        // but for immediate UI feedback or fallback, we can keep client-side logic if needed.
-        // However, the main RAG logic is now server-side in /query.
-        return []; 
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename || `${docId}`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            // Revoke on the next tick so the download has started.
+            window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+        } catch {
+            toast.error(
+                'Could not download the source document. It may no longer be retained.',
+            );
+        }
     };
 
     // Query LLM with document context
     const queryLLM = async (query: string, isDetailed: boolean) => {
         try {
             // Correct endpoint for chat completion
-            const response = await axios.post('/api/chat', {
+            const response = await apiClient.post('/chat', {
                 message: query,
                 session_id: sessionId,
                 use_rag: true,
@@ -252,7 +266,7 @@ const AIChat = () => {
     // Feedback handlers
     const handleFeedback = async (messageId: string, isPositive: boolean) => {
         try {
-            await axios.post('/api/feedback', {
+            await apiClient.post('/feedback', {
                 message_id: messageId, 
                 is_positive: isPositive
             });

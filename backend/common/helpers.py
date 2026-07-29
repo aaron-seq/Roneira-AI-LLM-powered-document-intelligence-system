@@ -3,12 +3,13 @@ Document parsing helpers for Roneira AI.
 Moved from document_processor.py to enforce separation of concerns.
 """
 
+import logging
 import os
 import re
-import aiofiles
-import logging
-from typing import Dict, Any, Tuple
 from datetime import datetime
+from typing import Any, Dict, Tuple
+
+import aiofiles
 
 # Optional imports for PDF/DOCX
 try:
@@ -27,6 +28,7 @@ except ImportError:
     DocxDocument = None
 
 logger = logging.getLogger(__name__)
+
 
 async def extract_text_from_file(file_path: str) -> Tuple[str, Dict[str, Any]]:
     """
@@ -71,7 +73,7 @@ async def extract_text_from_file(file_path: str) -> Tuple[str, Dict[str, Any]]:
 
     except Exception as e:
         logger.error(f"Text extraction failed for {file_path}: {e}", exc_info=True)
-        return f"Error extracting text: {str(e)}", metadata
+        return f"Error extracting text: {e!s}", metadata
 
 
 async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
@@ -89,8 +91,12 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
                         page_text = page.extract_text() or ""
                         page_texts.append(f"--- Page {page_num + 1} ---\n{page_text}")
                     except Exception as e:
-                        logger.warning(f"Failed to extract text from page {page_num + 1}: {e}")
-                        page_texts.append(f"--- Page {page_num + 1} ---\n[Text extraction failed]")
+                        logger.warning(
+                            f"Failed to extract text from page {page_num + 1}: {e}"
+                        )
+                        page_texts.append(
+                            f"--- Page {page_num + 1} ---\n[Text extraction failed]"
+                        )
                 text = "\n".join(page_texts)
         elif PyPDF2:
             # Fallback to PyPDF2
@@ -102,8 +108,12 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
                         page_text = page.extract_text() or ""
                         text += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
                     except Exception as e:
-                        logger.warning(f"Failed to extract text from page {page_num + 1}: {e}")
-                        text += f"\n--- Page {page_num + 1} ---\n[Text extraction failed]\n"
+                        logger.warning(
+                            f"Failed to extract text from page {page_num + 1}: {e}"
+                        )
+                        text += (
+                            f"\n--- Page {page_num + 1} ---\n[Text extraction failed]\n"
+                        )
         else:
             return "No PDF library installed (pdfplumber or PyPDF2)", metadata
 
@@ -117,7 +127,7 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
 
     except Exception as e:
         logger.error(f"PDF extraction failed: {e}", exc_info=True)
-        return f"PDF extraction error: {str(e)}", metadata
+        return f"PDF extraction error: {e!s}", metadata
 
 
 async def _extract_from_docx(file_path: str) -> Tuple[str, Dict[str, Any]]:
@@ -140,4 +150,4 @@ async def _extract_from_docx(file_path: str) -> Tuple[str, Dict[str, Any]]:
 
     except Exception as e:
         logger.error(f"DOCX extraction failed: {e}", exc_info=True)
-        return f"DOCX extraction error: {str(e)}", {"pages": 0, "word_count": 0}
+        return f"DOCX extraction error: {e!s}", {"pages": 0, "word_count": 0}

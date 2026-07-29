@@ -45,11 +45,18 @@ function App() {
                       <div className="app">
                         <Routes>
                           <Route path="/login" element={<Suspense fallback={<LoadingSpinner />}><Login /></Suspense>} />
-                          <Route path="/chat" element={<Suspense fallback={<LoadingSpinner />}><AIChat /></Suspense>} />
+                          {/*
+                            Every route below sits behind ProtectedRoute. /chat
+                            used to be a sibling of the protected layout, so it
+                            rendered for signed-out visitors and then failed
+                            every API call with a 401 once the backend began
+                            requiring a token.
+                          */}
                           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                             <Route index element={<Navigate to="/dashboard" replace />} />
                             <Route path="dashboard" element={<Suspense fallback={<LoadingSpinner />}><Dashboard /></Suspense>} />
                             <Route path="upload" element={<Suspense fallback={<LoadingSpinner />}><DocumentUpload /></Suspense>} />
+                            <Route path="chat" element={<Suspense fallback={<LoadingSpinner />}><AIChat /></Suspense>} />
                             <Route path="documents/:documentId" element={<Suspense fallback={<LoadingSpinner />}><DocumentViewer /></Suspense>} />
                           </Route>
                           <Route path="*" element={<Suspense fallback={<LoadingSpinner />}><NotFound /></Suspense>} />
