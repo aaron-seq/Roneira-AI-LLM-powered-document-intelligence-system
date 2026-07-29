@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class LLMProviderType(str, Enum):
     """Supported LLM provider types."""
+
     AZURE_OPENAI = "azure_openai"
     OLLAMA = "ollama"
     VLLM = "vllm"
@@ -24,7 +25,7 @@ class LLMProviderType(str, Enum):
 @dataclass
 class LLMConfig:
     """Configuration for LLM provider.
-    
+
     Attributes:
         provider_type: The type of LLM provider to use.
         model_name: Name of the model to use.
@@ -34,6 +35,7 @@ class LLMConfig:
         retry_attempts: Number of retry attempts on failure.
         retry_delay: Delay between retries in seconds.
     """
+
     provider_type: LLMProviderType = LLMProviderType.OLLAMA
     model_name: str = "llama3"
     temperature: float = 0.1
@@ -41,15 +43,15 @@ class LLMConfig:
     timeout: float = 120.0
     retry_attempts: int = 3
     retry_delay: float = 1.0
-    
+
     # Provider-specific configs
     azure_endpoint: Optional[str] = None
     azure_api_key: Optional[str] = None
     azure_api_version: str = "2024-02-01"
     azure_deployment_name: Optional[str] = None
-    
+
     ollama_base_url: str = "http://localhost:11434"
-    
+
     # Rate limiting
     requests_per_minute: int = 60
     tokens_per_minute: int = 150000
@@ -58,7 +60,7 @@ class LLMConfig:
 @dataclass
 class LLMResponse:
     """Response from LLM generation.
-    
+
     Attributes:
         content: Generated text content.
         model: Model that generated the response.
@@ -67,13 +69,14 @@ class LLMResponse:
         latency_ms: Response latency in milliseconds.
         metadata: Additional provider-specific metadata.
     """
+
     content: str
     model: str
     provider: str
     usage: Dict[str, int] = field(default_factory=dict)
     latency_ms: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert response to dictionary."""
         return {
@@ -89,6 +92,7 @@ class LLMResponse:
 @dataclass
 class StreamChunk:
     """A chunk from a streaming LLM response."""
+
     content: str
     is_final: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -96,14 +100,14 @@ class StreamChunk:
 
 class BaseLLMProvider(ABC):
     """Abstract base class for LLM providers.
-    
+
     All LLM providers must implement this interface to ensure
     consistent behavior across different backends.
     """
-    
+
     def __init__(self, config: LLMConfig):
         """Initialize provider with configuration.
-        
+
         Args:
             config: Provider configuration.
         """
@@ -111,91 +115,82 @@ class BaseLLMProvider(ABC):
         self.is_initialized = False
         self._request_count = 0
         self._total_tokens = 0
-    
+
     @property
     @abstractmethod
     def provider_name(self) -> str:
         """Return the provider name."""
         pass
-    
+
     @abstractmethod
     async def initialize(self) -> None:
         """Initialize the provider connection.
-        
+
         Should establish connections, validate credentials,
         and prepare the provider for requests.
         """
         pass
-    
+
     @abstractmethod
     async def generate(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        **kwargs: Any
+        self, prompt: str, system_prompt: Optional[str] = None, **kwargs: Any
     ) -> LLMResponse:
         """Generate a response for the given prompt.
-        
+
         Args:
             prompt: User prompt to generate response for.
             system_prompt: Optional system prompt for context.
             **kwargs: Additional provider-specific parameters.
-            
+
         Returns:
             LLMResponse with generated content and metadata.
-            
+
         Raises:
             LLMProviderError: If generation fails.
         """
         pass
-    
+
     @abstractmethod
     async def generate_stream(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        **kwargs: Any
+        self, prompt: str, system_prompt: Optional[str] = None, **kwargs: Any
     ) -> AsyncGenerator[StreamChunk, None]:
         """Stream a response for the given prompt.
-        
+
         Args:
             prompt: User prompt to generate response for.
             system_prompt: Optional system prompt for context.
             **kwargs: Additional provider-specific parameters.
-            
+
         Yields:
             StreamChunk objects with incremental content.
-            
+
         Raises:
             LLMProviderError: If streaming fails.
         """
         pass
-    
+
     @abstractmethod
     async def health_check(self) -> bool:
         """Check if the provider is healthy and operational.
-        
+
         Returns:
             True if provider is healthy, False otherwise.
         """
         pass
-    
+
     async def generate_batch(
-        self,
-        prompts: List[str],
-        system_prompt: Optional[str] = None,
-        **kwargs: Any
+        self, prompts: List[str], system_prompt: Optional[str] = None, **kwargs: Any
     ) -> List[LLMResponse]:
         """Generate responses for multiple prompts.
-        
+
         Default implementation processes sequentially.
         Providers can override for optimized batch processing.
-        
+
         Args:
             prompts: List of prompts to process.
             system_prompt: Optional shared system prompt.
             **kwargs: Additional parameters.
-            
+
         Returns:
             List of LLMResponse objects.
         """
@@ -204,10 +199,10 @@ class BaseLLMProvider(ABC):
             response = await self.generate(prompt, system_prompt, **kwargs)
             responses.append(response)
         return responses
-    
+
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about the current model.
-        
+
         Returns:
             Dictionary with model information.
         """
@@ -218,10 +213,10 @@ class BaseLLMProvider(ABC):
             "request_count": self._request_count,
             "total_tokens": self._total_tokens,
         }
-    
+
     async def cleanup(self) -> None:
         """Clean up provider resources.
-        
+
         Override to implement provider-specific cleanup.
         """
         self.is_initialized = False
@@ -230,13 +225,13 @@ class BaseLLMProvider(ABC):
 
 class LLMProviderError(Exception):
     """Base exception for LLM provider errors."""
-    
+
     def __init__(
         self,
         message: str,
         provider: str,
         retryable: bool = False,
-        original_error: Optional[Exception] = None
+        original_error: Optional[Exception] = None,
     ):
         super().__init__(message)
         self.provider = provider
@@ -246,23 +241,17 @@ class LLMProviderError(Exception):
 
 class RateLimitError(LLMProviderError):
     """Raised when rate limit is exceeded."""
-    
+
     def __init__(self, provider: str, retry_after: Optional[float] = None):
-        super().__init__(
-            f"Rate limit exceeded for {provider}",
-            provider,
-            retryable=True
-        )
+        super().__init__(f"Rate limit exceeded for {provider}", provider, retryable=True)
         self.retry_after = retry_after
 
 
 class ModelNotFoundError(LLMProviderError):
     """Raised when requested model is not available."""
-    
+
     def __init__(self, provider: str, model_name: str):
         super().__init__(
-            f"Model '{model_name}' not found in {provider}",
-            provider,
-            retryable=False
+            f"Model '{model_name}' not found in {provider}", provider, retryable=False
         )
         self.model_name = model_name

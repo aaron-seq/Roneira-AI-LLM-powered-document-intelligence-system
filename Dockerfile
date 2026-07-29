@@ -1,111 +1,84 @@
-# Multi-stage Docker build for production deployment
-# Stage 1: Build dependencies and prepare application
-FROM python:3.11-slim as builder
+# Container image for the Document Intelligence API.
+#
+# The previous file's `production` stage ran `app.main:app` and copied only
+# `app/` and `config.py` — a tree the service does not use — while the
+# `development` stage ran `backend.main:app`. Production and development were
+# two different applications. Both stages now build and run the same code.
 
-# Set environment variables
+# ---------------------------------------------------------------- builder
+FROM python:3.11-slim AS builder
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    curl \
+# Build toolchain is needed for wheels without a manylinux build; it stays in
+# this stage and never reaches the runtime image.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app
+WORKDIR /build
 
-# Set work directory
-WORKDIR /app
-
-# Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --user --no-warn-script-location -r requirements.txt
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# Stage 2: Production image
-FROM python:3.11-slim as production
+# ------------------------------------------------------------------- base
+# Shared runtime layer: interpreter, OS packages, user, directories.
+FROM python:3.11-slim AS base
 
-# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH=/home/app/.local/bin:$PATH \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PATH="/opt/venv/bin:$PATH"
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
+# curl for the healthcheck; libmagic for content-type sniffing on upload.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl libmagic1 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app
+RUN useradd --create-home --shell /bin/bash --uid 1000 app
 
-# Copy Python packages from builder stage
-COPY --from=builder /home/app/.local /home/app/.local
+COPY --from=builder /opt/venv /opt/venv
 
-# Set work directory and change ownership
 WORKDIR /app
-RUN chown -R app:app /app
 
-# Switch to non-root user
+# Writable paths for uploads, the SQLite database and the vector store.
+RUN mkdir -p /app/uploads /app/processed /app/chroma_db /app/logs \
+    && chown -R app:app /app /opt/venv
+
+# ------------------------------------------------------------- production
+FROM base AS production
+
+COPY --chown=app:app backend/ ./backend/
+COPY --chown=app:app gunicorn.conf.py ./
+
 USER app
 
-# Copy application code
-COPY --chown=app:app app/ ./app/
-COPY --chown=app:app config.py .
-
-# Create necessary directories
-RUN mkdir -p uploads logs
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Expose port
 EXPOSE 8000
 
-# Start command
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Liveness must not depend on the database: a transient DB outage should not
+# make the orchestrator kill an otherwise healthy container.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD curl -fsS http://localhost:8000/api/health/live || exit 1
 
-# Stage 3: Development image (with hot reload)
-FROM python:3.11-slim as development
+# Uvicorn workers under Gunicorn: Gunicorn supervises and recycles processes,
+# uvicorn provides the ASGI event loop.
+CMD ["gunicorn", "backend.main:app", "--config", "gunicorn.conf.py"]
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app
+# ------------------------------------------------------------ development
+FROM base AS development
 
-# Install runtime and dev dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    gcc \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+# Source is bind-mounted by docker-compose, so nothing is copied here.
+USER app
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app
-
-# Set work directory
-WORKDIR /app
-
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Create necessary directories
-RUN mkdir -p uploads logs data && chown -R app:app /app
-
-# Don't copy code - will be mounted as volume
-
-# Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8000/api/health/live || exit 1
 
-# Start command with reload for development
-CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

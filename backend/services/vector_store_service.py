@@ -5,12 +5,11 @@ Provides vector storage and kNN similarity search using ChromaDB
 with fallback to in-memory storage for development.
 """
 
-import logging
-import uuid
-from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
 import asyncio
+import logging
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -19,6 +19,10 @@ bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 # --- Worker Processes ---
 # The number of worker processes to spawn. A common recommendation is
 # (2 * number of CPU cores) + 1.
+# NOTE: with the default SQLite database and the on-disk ChromaDB store,
+# more than one worker means several processes writing the same files. Keep
+# WORKERS=1 unless DATABASE_URL points at PostgreSQL and the vector store is
+# a shared service. See docs/DEPLOYMENT.md.
 workers = int(os.getenv('WORKERS', multiprocessing.cpu_count() * 2 + 1))
 
 # The type of worker to use. 'uvicorn.workers.UvicornWorker' is ideal for
@@ -32,6 +36,15 @@ worker_connections = 1000
 # This helps prevent memory leaks.
 max_requests = 1000
 max_requests_jitter = 50  # Adds randomness to the restart timing.
+
+# Document processing and LLM inference run inside the worker. Gunicorn's
+# 30s default would kill a worker mid-inference on a slow model, so the
+# timeout is raised and made configurable.
+timeout = int(os.getenv('WORKER_TIMEOUT', '180'))
+graceful_timeout = int(os.getenv('GRACEFUL_TIMEOUT', '30'))
+# Keep-alive slightly above a typical load balancer idle timeout so the
+# balancer, not the worker, closes idle connections.
+keepalive = int(os.getenv('KEEPALIVE', '5'))
 
 # --- Logging ---
 # Redirect access and error logs to stdout and stderr, which is standard

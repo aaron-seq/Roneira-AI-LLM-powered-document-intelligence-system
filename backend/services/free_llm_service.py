@@ -3,17 +3,14 @@
 # Using DeepSeek API + Local Ollama for document intelligence
 # ==============================================================================
 
-import os
 import asyncio
 import logging
-from typing import Optional, Dict, Any, List
+import os
 from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
-import aiohttp
 import httpx
 from langchain_community.llms import Ollama
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langchain_core.callbacks import BaseCallbackHandler
 
 logger = logging.getLogger(__name__)
 

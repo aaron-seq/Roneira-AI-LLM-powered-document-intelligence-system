@@ -2,12 +2,12 @@
 Local LLM service using Ollama for document intelligence
 """
 
-import asyncio
 # Remove standard logging to enforce structured logging
-# import logging 
-import httpx
-from typing import Dict, Any, Optional, List
+# import logging
 import json
+from typing import Any, Dict
+
+import httpx
 
 from backend.core.config import get_settings
 from backend.observability.structured_logging import get_logger, with_correlation_id
@@ -38,11 +38,10 @@ class LocalLLMService:
             # Test connection and model availability
             with logger.timed("llm_initialization_check"):
                 await self._check_model_availability()
-                
+
             self.is_initialized = True
             logger.info(
-                f"✅ Local LLM service initialized",
-                model=self.settings.ollama_model
+                "✅ Local LLM service initialized", model=self.settings.ollama_model
             )
 
         except Exception as e:
@@ -50,7 +49,7 @@ class LocalLLMService:
             logger.error(
                 "❌ Failed to initialize local LLM service",
                 exc_info=True,
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
             )
             logger.warning(
                 "⚠️ Application will continue in DEGRADED mode (No AI features)"
@@ -133,7 +132,7 @@ class LocalLLMService:
             logger.error(f"Error enhancing document data: {e}")
             return {
                 "enhanced_text": extracted_text,
-                "summary": f"Document processed with error: {str(e)}",
+                "summary": f"Document processed with error: {e!s}",
                 "key_points": [],
                 "entities": [],
                 "confidence": 0.3,
@@ -197,15 +196,15 @@ Respond ONLY with valid JSON, no additional text.
                 return result.get("response", "")
             else:
                 logger.error(
-                    f"LLM generation failed",
+                    "LLM generation failed",
                     status_code=response.status_code,
-                    response_text=response.text
+                    response_text=response.text,
                 )
                 raise Exception(
                     f"LLM generation failed: {response.status_code} - {response.text}"
                 )
 
-        except Exception as e:
+        except Exception:
             logger.error("Error generating LLM response", exc_info=True)
             raise
 
@@ -268,7 +267,7 @@ Respond ONLY with valid JSON, no additional text.
             return await self._generate_response(prompt)
         except Exception as e:
             logger.error(f"Error generating chat response: {e}")
-            return f"I encountered an error generating a response: {str(e)}"
+            return f"I encountered an error generating a response: {e!s}"
 
     async def summarize_text(self, text: str, max_length: int = 200) -> str:
         """Generate a summary of the given text"""

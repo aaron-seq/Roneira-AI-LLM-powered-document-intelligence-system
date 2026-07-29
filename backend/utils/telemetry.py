@@ -1,32 +1,66 @@
-import structlog
+"""Logging configuration.
+
+One logging setup for the whole process. Previously ``utils/telemetry`` and
+``observability/structured_logging`` each configured logging independently and
+whichever ran last won, so the correlation-ID-aware formatter was installed but
+never used.
+
+Handlers are attached to the root logger, and the structured formatter from
+``observability`` supplies correlation IDs from the request context.
+"""
+
+from __future__ import annotations
+
 import logging
 import sys
 
-def setup_telemetry():
-    """
-    Configures structured logging (Telemetry).
-    """
-    # 1. Configure Standard Logging to capture warnings/errors from libraries
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=logging.INFO,
-    )
+from backend.observability.structured_logging import StructuredFormatter
 
-    # 2. Configure Structlog
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.StackInfoRenderer(),
-            structlog.dev.set_exc_info,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.JSONRenderer(),
-        ],
-        logger_factory=structlog.PrintLoggerFactory(),
-        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-        cache_logger_on_first_use=True,
+#: Libraries that log at INFO on every request and drown out our own output.
+NOISY_LOGGERS = {
+    "uvicorn.access": logging.WARNING,
+    "httpx": logging.WARNING,
+    "httpcore": logging.WARNING,
+    "sentence_transformers": logging.WARNING,
+    "chromadb": logging.WARNING,
+    "urllib3": logging.WARNING,
+}
+
+
+def setup_telemetry(level: str = "INFO", json_logs: bool = False) -> None:
+    """Configure process-wide logging.
+
+    Args:
+        level: Root log level name.
+        json_logs: Emit one JSON object per line. Enabled in production so a
+            log aggregator can index correlation IDs and status codes;
+            human-readable text is used locally.
+    """
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    # Replace existing handlers so repeated calls (tests, reload) do not
+    # produce duplicated log lines.
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+
+    handler = logging.StreamHandler(stream=sys.stdout)
+    if json_logs:
+        handler.setFormatter(StructuredFormatter(service_name="roneira"))
+    else:
+        handler.setFormatter(
+            logging.Formatter(
+                fmt="%(asctime)s %(levelname)-8s %(name)s | %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+    root.addHandler(handler)
+
+    for name, noisy_level in NOISY_LOGGERS.items():
+        logging.getLogger(name).setLevel(noisy_level)
+
+    logging.getLogger("backend").info(
+        "Logging configured (level=%s, format=%s)",
+        level.upper(),
+        "json" if json_logs else "text",
     )
-    
-    log = structlog.get_logger()
-    log.info("Telemetry initialized", provider="structlog")

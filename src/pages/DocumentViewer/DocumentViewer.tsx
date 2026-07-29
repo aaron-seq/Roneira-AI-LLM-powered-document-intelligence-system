@@ -9,7 +9,7 @@ import {
     CircularProgress,
     Grid,
 } from '@mui/material';
-import axios from 'axios';
+import { apiClient } from '../../api/client';
 import toast from 'react-hot-toast';
 
 // API path handled by Vite proxy
@@ -28,7 +28,7 @@ const DocumentViewer = () => {
             try {
                 // Fetch actual document data from the backend
                 // The status endpoint returns the processing result which includes the text
-                const response = await axios.get(`/api/documents/${documentId}/status`);
+                const response = await apiClient.get(`/documents/${documentId}/status`);
                 setDocumentData(response.data);
             } catch (error) {
                 console.error('Failed to load document:', error);
@@ -51,7 +51,7 @@ const DocumentViewer = () => {
 
         try {
             // Call the real /api/chat endpoint for document-based Q&A
-            const response = await axios.post('/api/chat', {
+            const response = await apiClient.post('/chat', {
                 message: question,
                 session_id: 'doc-chat-session', 
                 use_rag: true,

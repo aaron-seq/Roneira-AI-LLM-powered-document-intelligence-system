@@ -27,9 +27,12 @@
     "noFallthroughCasesInSwitch": true,
     // --- Module Resolution Options ---
     "moduleResolution": "bundler",
+    // baseUrl is required for the "@/*" path mapping. It is deprecated from
+    // TypeScript 6; when upgrading, add "ignoreDeprecations": "6.0" here or
+    // switch the mapping to relative paths.
+    "baseUrl": ".",
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": [
         "src/*"

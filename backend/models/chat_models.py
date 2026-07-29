@@ -5,10 +5,9 @@ Pydantic models for chat completion, RAG retrieval,
 and document indexing API endpoints.
 """
 
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============ Chat Models ============
 
@@ -19,10 +18,11 @@ class ChatMessageModel(BaseModel):
     role: str = Field(..., description="Message role: user, assistant, or system")
     content: str = Field(..., description="Message content")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {"role": "user", "content": "What is this document about?"}
         }
+    )
 
 
 class ChatRequest(BaseModel):
@@ -37,8 +37,8 @@ class ChatRequest(BaseModel):
     document_id: Optional[str] = Field(None, description="Filter to specific document")
     stream: bool = Field(False, description="Stream response")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "message": "Summarize the main points of this document",
                 "session_id": "session-123",
@@ -46,15 +46,24 @@ class ChatRequest(BaseModel):
                 "rag_top_k": 5,
             }
         }
+    )
 
 
 class ChatSource(BaseModel):
-    """Source reference from RAG retrieval."""
+    """A retrieved chunk cited in an answer.
+
+    ``page_number`` and ``filename`` are what let a user verify a claim
+    against the original document rather than trusting an opaque chunk id.
+    """
 
     document_id: str
     chunk_id: str
     score: float
     content_preview: str
+    page_number: Optional[int] = Field(
+        default=None, description="Page the chunk came from, when paginated"
+    )
+    filename: Optional[str] = Field(default=None, description="Source filename")
 
 
 class ChatResponse(BaseModel):
@@ -66,9 +75,23 @@ class ChatResponse(BaseModel):
         default_factory=list, description="RAG sources used"
     )
     model: str = Field(..., description="Model used for generation")
+    grounded: bool = Field(
+        default=False,
+        description=(
+            "True when the answer was built from retrieved document context. "
+            "False means the model answered without supporting sources."
+        ),
+    )
+    embeddings_are_real: bool = Field(
+        default=False,
+        description=(
+            "False when retrieval ran on placeholder vectors because no "
+            "embedding model was available; treat sources as unreliable."
+        ),
+    )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "message": "Based on the document, the main points are...",
                 "session_id": "session-123",
@@ -83,6 +106,7 @@ class ChatResponse(BaseModel):
                 "model": "llama3.2:3b",
             }
         }
+    )
 
 
 # ============ RAG Models ============
@@ -96,10 +120,11 @@ class SearchRequest(BaseModel):
     document_id: Optional[str] = Field(None, description="Filter to specific document")
     min_score: float = Field(0.0, description="Minimum similarity score", ge=0, le=1)
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {"query": "financial projections for 2024", "top_k": 10}
         }
+    )
 
 
 class SearchResult(BaseModel):
@@ -118,27 +143,33 @@ class SearchResponse(BaseModel):
     query: str
     results: List[SearchResult]
     total_results: int
+    embeddings_are_real: bool = Field(
+        default=False,
+        description="False when results come from placeholder vectors.",
+    )
 
 
 class IndexDocumentRequest(BaseModel):
     """Request to index a document for RAG."""
 
-    document_id: str = Field(..., description="Document identifier")
-    content: str = Field(..., description="Document content to index")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
-    chunk_size: int = Field(
-        1000, description="Chunk size for splitting", ge=100, le=5000
+    document_id: Optional[str] = Field(
+        default=None,
+        description="Ignored; the document is identified by the URL path.",
     )
+    content: str = Field(..., description="Document content to index", min_length=1)
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Optional metadata")
+    chunk_size: int = Field(1000, description="Chunk size for splitting", ge=100, le=5000)
     chunk_overlap: int = Field(200, description="Overlap between chunks", ge=0, le=1000)
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "document_id": "doc-123",
                 "content": "Full document text content...",
                 "metadata": {"filename": "report.pdf", "author": "John Doe"},
             }
         }
+    )
 
 
 class IndexDocumentResponse(BaseModel):
@@ -148,6 +179,7 @@ class IndexDocumentResponse(BaseModel):
     chunks_indexed: int
     success: bool
     error: Optional[str] = None
+    embeddings_are_real: bool = False
 
 
 # ============ Memory Models ============
@@ -181,3 +213,8 @@ class RAGStatsResponse(BaseModel):
     embedding_cache: Dict[str, Any]
     memory: Dict[str, Any]
     guardrails: Dict[str, Any]
+    embeddings_are_real: bool = False
+    degraded_reason: Optional[str] = Field(
+        default=None,
+        description="Why real embeddings are unavailable, when applicable.",
+    )

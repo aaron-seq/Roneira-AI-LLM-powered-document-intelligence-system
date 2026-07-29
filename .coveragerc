@@ -1,0 +1,51 @@
+# Coverage is measured over the code the running application actually
+# executes. The modules listed under `omit` are present in the tree but are
+# not imported by `backend.main` — they are unwired feature scaffolding
+# (PII detection, entity extraction, summarization, OCR, the multi-provider
+# LLM abstraction, fine-tuning helpers).
+#
+# They are omitted rather than deleted because several are worth adopting;
+# see the "Unwired modules" section of docs/ARCHITECTURE.md and the roadmap
+# in README.md. Including them would drag the measured percentage down to
+# roughly 47% and hide real regressions in the code that does run, so the
+# gate would stop meaning anything.
+#
+# When one of these modules is wired into a request path, remove it from this
+# list in the same change and bring tests with it.
+
+[run]
+source = backend
+branch = False
+omit =
+    backend/tests/*
+    # --- Not imported by backend.main (verified, not assumed) ---
+    backend/common/utils.py
+    backend/services/advanced_rag.py
+    backend/services/azure_service.py
+    backend/services/cross_reference_service.py
+    backend/services/entity_extraction_service.py
+    backend/services/feedback_service.py
+    backend/services/free_llm_service.py
+    backend/services/free_ocr_service.py
+    backend/services/llm_providers/*
+    backend/services/pii_detection_service.py
+    backend/services/request_batching.py
+    backend/services/sse_stream.py
+    backend/services/summarization_service.py
+    backend/training/*
+    # Optional tracing shim; inert unless opentelemetry is installed.
+    backend/observability/tracing.py
+
+[report]
+show_missing = True
+skip_covered = True
+precision = 1
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    \.\.\.
+
+[xml]
+output = coverage.xml

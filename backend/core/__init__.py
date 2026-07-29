@@ -1,5 +1,5 @@
 """Core utilities for the backend application."""
 
-from backend.core.config import get_settings, Settings
+from backend.core.config import Settings, get_settings
 
-__all__ = ["get_settings", "Settings"]
+__all__ = ["Settings", "get_settings"]

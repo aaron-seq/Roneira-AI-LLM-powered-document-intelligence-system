@@ -155,3 +155,13 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+# Local runtime artefacts
+uploads/
+processed/
+chroma_db/
+*.db
+*.sqlite3
+coverage.xml
+.coverage
+htmlcov/
+dist/

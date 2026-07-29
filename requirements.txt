@@ -12,7 +12,11 @@ python-multipart==0.0.9
 # Database
 sqlalchemy==2.0.23
 aiosqlite==0.19.0
-# asyncpg==0.29.0
+# Async PostgreSQL driver. Required whenever DATABASE_URL uses
+# postgresql+asyncpg:// — which docker-compose does by default. It was
+# commented out while compose still pointed at PostgreSQL, so the container
+# failed at startup with "the asyncio extension requires an async driver".
+asyncpg==0.29.0
 alembic==1.13.1
 
 # Redis/Caching (unified Redis client with async support)

@@ -15,7 +15,7 @@ import {
     IconButton,
 } from '@mui/material';
 import { UploadFile as UploadFileIcon, CheckCircle, Error as ErrorIcon, Delete as DeleteIcon } from '@mui/icons-material';
-import axios from 'axios';
+import { apiClient } from '../../api/client';
 import toast from 'react-hot-toast';
 
 // Define a type for the processing status message from the backend
@@ -46,7 +46,7 @@ const DocumentUpload = () => {
     // Polling function for a single document
     const pollStatus = useCallback(async (docId: string) => {
         try {
-            const response = await axios.get(`/api/documents/${docId}/status`);
+            const response = await apiClient.get(`/documents/${docId}/status`);
             const status = response.data;
             
             if (status.document_id === docId) {
@@ -112,7 +112,7 @@ const DocumentUpload = () => {
         setIsUploading(true);
         const filesToUpload = files.filter(f => f.uploadStatus === 'idle' || f.uploadStatus === 'error');
 
-        await Promise.all(filesToUpload.map(async (fileWrapper, idx) => {
+        await Promise.all(filesToUpload.map(async (fileWrapper) => {
             // Find current index to update state
             const fileIndex = files.indexOf(fileWrapper);
             const updateFileState = (updates: Partial<FileWithStatus>) => {
@@ -127,7 +127,7 @@ const DocumentUpload = () => {
             formData.append('file', fileWrapper.file); // Use the stored File reference
 
             try {
-                const response = await axios.post('/api/documents/upload', formData, {
+                const response = await apiClient.post('/documents/upload', formData, {
                     onUploadProgress: (progressEvent) => {
                         if (progressEvent.total) {
                             const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);

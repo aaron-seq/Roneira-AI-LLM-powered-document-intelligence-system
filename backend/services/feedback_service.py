@@ -2,7 +2,7 @@
 Feedback Service for storing user feedback and calculating metrics.
 """
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 class FeedbackService:

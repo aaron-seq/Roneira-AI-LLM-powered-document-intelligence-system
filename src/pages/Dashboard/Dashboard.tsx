@@ -10,24 +10,17 @@ import {
     Button,
     Skeleton,
     LinearProgress,
-    Tooltip,
-    Divider,
-    Paper
+    Divider
 } from '@mui/material';
 import { 
     Article, 
-    Cached, 
     CheckCircle, 
-    Chat,
     Refresh,
     TrendingUp,
     AutoAwesome,
-    ArrowForward,
     PieChart,
-    BarChart as BarChartIcon,
     Timeline,
     Speed,
-    BugReport,
     Storage,
     Memory
 } from '@mui/icons-material';
@@ -188,9 +181,7 @@ const Dashboard = () => {
 
     // Calculated Metrics
     const total = metrics?.total_documents || documents.length;
-    const completed = metrics?.processed_documents || documents.filter(d => d.status === 'completed').length;
     const processing = documents.filter(d => d.status === 'processing').length;
-    const failed = documents.filter(d => d.status === 'failed').length;
     
     // Document Types
     const getDocType = (name: string) => {

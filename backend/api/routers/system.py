@@ -1,119 +1,248 @@
-from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime
-from backend.models.responses import HealthCheckResponse
-from backend.services.feedback_service import FeedbackService
-from backend.core.database import DatabaseManager
-from backend.core.config import get_settings
-from backend.services.document_processor import DocumentProcessorService
-from backend.api.dependencies import get_db_manager, get_feedback_service, get_document_processor
-from pydantic import BaseModel
-from typing import Dict, Any
-import os
+"""Root, health, readiness, metrics, feedback and dashboard endpoints."""
+
+from __future__ import annotations
+
 import logging
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field
+
+from backend.api.dependencies import (
+    get_db_manager,
+    get_document_processor,
+    get_feedback_repository,
+    get_retrieval_service,
+)
+from backend.api.security import CurrentUser, get_current_user
+from backend.core.config import get_settings
+from backend.core.database import DatabaseManager
+from backend.models.responses import ComponentHealth, HealthCheckResponse
+from backend.repositories.feedback_repository import FeedbackRepository
+from backend.services.document_processor import DocumentProcessorService
+from backend.services.retrieval_service import RetrievalService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 class FeedbackRequest(BaseModel):
-    message_id: str
+    """A thumbs up/down on an assistant answer."""
+
+    message_id: str = Field(..., min_length=1)
     is_positive: bool
+    session_id: Optional[str] = None
+    comment: Optional[str] = Field(default=None, max_length=2000)
+
 
 class DashboardMetricsResponse(BaseModel):
-    total_documents: int
-    processed_documents: int
-    accuracy: float
-    avg_confidence: float
+    """Aggregate figures for the dashboard.
 
-@router.get("/", tags=["Root"])
-async def root():
-    """Root endpoint with system info"""
+    Every field is measured. The previous implementation returned a
+    hard-coded 98.5% average confidence whenever no document carried one,
+    which made the dashboard look healthy regardless of reality.
+    """
+
+    total_documents: int
+    documents_by_status: Dict[str, int] = Field(default_factory=dict)
+    indexed_chunks: int = 0
+    total_words: int = 0
+    avg_confidence: Optional[float] = Field(
+        default=None, description="Mean AI confidence, or null when unmeasured"
+    )
+    feedback: Dict[str, Any] = Field(default_factory=dict)
+    embeddings_are_real: bool = False
+    ai_enrichment_available: bool = False
+
+
+@router.get("/", tags=["Root"], summary="Service banner")
+async def root() -> Dict[str, Any]:
+    """Identify the service and point at its documentation."""
+    settings = get_settings()
     return {
-        "message": "🤖 AI Document Intelligence System",
-        "version": "2.0.0",
+        "name": settings.app_name,
+        "version": settings.version,
+        "environment": settings.environment,
         "status": "operational",
-        "docs": "/api/docs",
-        "timestamp": datetime.utcnow().isoformat(),
+        "docs": "/api/docs" if settings.docs_enabled else None,
+        "health": "/api/health",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
     }
 
-@router.get("/health", response_model=HealthCheckResponse, tags=["System"])
+
+@router.get(
+    "/health",
+    response_model=HealthCheckResponse,
+    tags=["System"],
+    summary="Component-level health",
+)
 async def health_check(
-    db_manager: DatabaseManager = Depends(get_db_manager)
+    db_manager: DatabaseManager = Depends(get_db_manager),
+    retrieval: RetrievalService = Depends(get_retrieval_service),
+    processor: DocumentProcessorService = Depends(get_document_processor),
 ) -> HealthCheckResponse:
-    """Enhanced health check"""
-    try:
-        db_connected = await db_manager.health_check()
-        db_status = "connected" if db_connected else "disconnected"
+    """Report the health of each dependency.
 
-        return HealthCheckResponse(
-            status="healthy",
-            version="2.0.0",
-            timestamp=datetime.utcnow(),
-            database_status=db_status,
-            services_status="operational",
-        )
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return HealthCheckResponse(
-            status="unhealthy",
-            version="2.0.0",
-            timestamp=datetime.utcnow(),
-            database_status="error",
-            services_status="degraded",
+    Distinguishes *unhealthy* (cannot serve requests) from *degraded* (serving
+    with reduced capability). A monitor that only sees "healthy" cannot tell
+    that every search result is meaningless because no embedding model loaded.
+    """
+    settings = get_settings()
+    components: Dict[str, ComponentHealth] = {}
+
+    db_ok = await db_manager.health_check()
+    components["database"] = ComponentHealth(
+        status="ok" if db_ok else "unavailable",
+        detail=None if db_ok else "Database connection failed",
+    )
+
+    if retrieval.embeddings_are_real:
+        components["embeddings"] = ComponentHealth(status="ok")
+    else:
+        components["embeddings"] = ComponentHealth(
+            status="degraded",
+            detail=(
+                "Keyword-only matching: "
+                + (retrieval.embedding_service.degraded_reason or "no model loaded")
+            ),
         )
 
-@router.post("/feedback", tags=["Feedback"])
+    vector_stats = await retrieval.vector_store.get_stats()
+    components["vector_store"] = ComponentHealth(
+        status="ok" if vector_stats.get("initialized") else "unavailable",
+        detail=f"backend={vector_stats.get('backend')}, "
+        f"chunks={vector_stats.get('document_count')}",
+    )
+
+    if processor.ai_enabled:
+        components["llm"] = ComponentHealth(status="ok")
+    else:
+        components["llm"] = ComponentHealth(
+            status="degraded",
+            detail=(
+                f"No LLM reachable at {settings.ollama_base_url}. Documents are "
+                "extracted and indexed, but not summarised."
+            ),
+        )
+
+    statuses = {component.status for component in components.values()}
+    if "unavailable" in statuses:
+        overall = "unhealthy"
+    elif "degraded" in statuses:
+        overall = "degraded"
+    else:
+        overall = "healthy"
+
+    return HealthCheckResponse(
+        status=overall,
+        version=settings.version,
+        environment=settings.environment,
+        components=components,
+    )
+
+
+@router.get("/health/live", tags=["System"], summary="Liveness probe")
+async def liveness() -> Dict[str, str]:
+    """Always 200 while the process is running.
+
+    Kubernetes restarts a container that fails liveness, so this must not
+    depend on the database — a transient DB outage should not trigger a
+    restart loop.
+    """
+    return {"status": "alive"}
+
+
+@router.get("/health/ready", tags=["System"], summary="Readiness probe")
+async def readiness(
+    db_manager: DatabaseManager = Depends(get_db_manager),
+) -> Dict[str, Any]:
+    """Report whether this instance should receive traffic."""
+    if not await db_manager.health_check():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable",
+        )
+    return {"status": "ready"}
+
+
+@router.get(
+    "/metrics", tags=["System"], summary="Prometheus metrics", include_in_schema=False
+)
+async def prometheus_metrics() -> Response:
+    """Expose the Prometheus registry.
+
+    The metrics module and a Grafana dashboard both existed already, but
+    nothing served the scrape endpoint, so no metric ever left the process.
+    """
+    settings = get_settings()
+    if not settings.metrics_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Metrics are disabled"
+        )
+
+    from backend.observability.metrics import get_metrics
+
+    metrics = get_metrics()
+    return Response(content=metrics.get_metrics(), media_type=metrics.get_content_type())
+
+
+@router.post("/feedback", tags=["Feedback"], summary="Rate an answer")
 async def submit_feedback(
     request: FeedbackRequest,
-    feedback_service: FeedbackService = Depends(get_feedback_service)
+    user: CurrentUser = Depends(get_current_user),
+    feedback: FeedbackRepository = Depends(get_feedback_repository),
 ) -> Dict[str, Any]:
-    """Submit feedback for a chat message."""
-    if not feedback_service:
-        raise HTTPException(status_code=500, detail="Feedback service unavailable")
-    
-    return await feedback_service.add_feedback(request.is_positive)
+    """Record a thumbs up/down against an assistant message."""
+    return await feedback.add(
+        message_id=request.message_id,
+        is_positive=request.is_positive,
+        session_id=request.session_id,
+        owner_id=user.user_id,
+        comment=request.comment,
+    )
 
 
-@router.get("/dashboard/metrics", response_model=DashboardMetricsResponse, tags=["Dashboard"])
+@router.get(
+    "/dashboard/metrics",
+    response_model=DashboardMetricsResponse,
+    tags=["Dashboard"],
+    summary="Aggregate figures for the caller",
+)
 async def get_dashboard_metrics(
-    feedback_service: FeedbackService = Depends(get_feedback_service),
-    document_processor: DocumentProcessorService = Depends(get_document_processor)
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+    feedback: FeedbackRepository = Depends(get_feedback_repository),
+    retrieval: RetrievalService = Depends(get_retrieval_service),
 ) -> DashboardMetricsResponse:
-    """Get real-time dashboard metrics."""
-    try:
-        # Get stats
-        feedback_stats = feedback_service.get_stats() if feedback_service else {"accuracy": 0.0}
+    """Return document and quality statistics for the signed-in user."""
+    stats = await processor.stats(owner_id=user.user_id)
+    feedback_stats = await feedback.stats(owner_id=user.user_id)
+    avg_confidence = await _mean_confidence(processor, user.user_id)
 
-        # Count real files in uploads directory
-        settings = get_settings()
-        total_docs = 0
-        if os.path.exists(settings.upload_directory):
-            for root, dirs, files in os.walk(settings.upload_directory):
-                total_docs += len([f for f in files if not f.startswith(".")])
+    return DashboardMetricsResponse(
+        total_documents=stats["total_documents"],
+        documents_by_status=stats["by_status"],
+        indexed_chunks=stats["total_chunks"],
+        total_words=stats["total_words"],
+        avg_confidence=avg_confidence,
+        feedback=feedback_stats,
+        embeddings_are_real=retrieval.embeddings_are_real,
+        ai_enrichment_available=processor.ai_enabled,
+    )
 
-        # Get processed docs count
-        processed_docs = await document_processor.list_documents(limit=1000)
-        processed_count = len(processed_docs)
 
-        # Calculate average confidence
-        avg_conf = 0.985 
-        if processed_docs:
-            confidences = []
-            for doc in processed_docs:
-                result = doc.get("result", {})
-                ai_analysis = result.get("ai_analysis", {})
-                conf = ai_analysis.get("confidence")
-                if conf:
-                    confidences.append(float(conf))
+async def _mean_confidence(
+    processor: DocumentProcessorService, owner_id: str
+) -> Optional[float]:
+    """Mean AI confidence across completed documents, or None if unmeasured."""
+    documents, _ = await processor.list_documents(
+        limit=500, status_filter="completed", owner_id=owner_id
+    )
+    scores = []
+    for document in documents:
+        confidence = (document.get("ai_insights") or {}).get("confidence")
+        if isinstance(confidence, (int, float)):
+            scores.append(float(confidence))
 
-            if confidences:
-                avg_conf = sum(confidences) / len(confidences)
-
-        return DashboardMetricsResponse(
-            total_documents=total_docs,
-            processed_documents=processed_count,
-            accuracy=feedback_stats.get("accuracy", 0.0),
-            avg_confidence=avg_conf * 100 if avg_conf <= 1 else avg_conf,
-        )
-    except Exception as e:
-         logger.error(f"Dashboard metrics error: {e}")
-         raise HTTPException(status_code=500, detail="Services unavailable")
+    return round(sum(scores) / len(scores), 4) if scores else None

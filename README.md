@@ -1,366 +1,353 @@
-# Document Intelligence System 2.0
+# Roneira — Document Intelligence
 
+Upload documents, ask questions about them, and get answers with citations
+back to the exact page they came from.
 
-
-> Enterprise-grade document processing with AI-powered insights and modern cloud-native architecture
-
-[![CI/CD Pipeline](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/actions/workflows/ci-cd.yml)
+[![CI](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/actions/workflows/ci.yml/badge.svg)](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/actions/workflows/ci.yml)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688.svg?style=flat&logo=FastAPI&logoColor=white)](https://fastapi.tiangolo.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker](https://img.shields.io/badge/docker-ready-0db7ed.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Overview
+Runs entirely on your own machine. No API keys, no data leaving the host.
 
-A production-ready, scalable document intelligence system that combines the power of Azure AI services with advanced language models to extract, analyze, and structure information from various document types. Built with modern Python frameworks and designed for cloud deployment.
+---
 
-### Key Features
+## What it does
 
-- **AI-Powered Processing**: Azure Document Intelligence + GPT-4 for comprehensive document analysis
-- **RAG Pipeline**: Semantic search with vector embeddings and context-aware chat
-- **Modern Architecture**: FastAPI, async/await, proper dependency injection
-- **Production Ready**: Docker containerization, CI/CD pipelines, monitoring
-- **Cloud Native**: Optimized for Railway, Render, Vercel, and other cloud platforms
-- **Security First**: JWT authentication, input validation, rate limiting, PII detection
-- **Scalable**: Redis caching, connection pooling, async processing
-- **Developer Friendly**: Comprehensive testing, type hints, documentation
+You point it at a pile of PDFs, Word documents, scans or text files. It
+extracts the text, splits it into passages, indexes them, and then answers
+questions against **only those documents** — telling you which file and page
+each part of the answer came from.
+
+**It is built for the case where being wrong is expensive.** Three properties
+follow from that:
+
+- **Every answer is attributable.** Each citation carries a document, a page
+  and a similarity score. The original file is retained and downloadable, so
+  you can open page 7 and check.
+- **It says when it does not know.** If retrieval finds nothing above the
+  relevance threshold, the answer says so instead of quietly falling back to
+  the model's general knowledge next to an empty source list.
+- **It tells you when it is degraded.** If no embedding model is loaded,
+  search drops to keyword matching — and `/api/health`, `/api/rag/stats`,
+  every chat response and a Prometheus gauge all report it.
+
+### What it is not
+
+Being clear about this saves you an evaluation:
+
+- Not a hosted product. There is no multi-tenant billing, SSO, or audit log.
+- The bundled `demo`/`admin` accounts are **development conveniences**, not a
+  user management system. See [docs/SECURITY.md](docs/SECURITY.md) before
+  putting real documents in it.
+- OCR for scanned images is not wired into the pipeline yet — a scan with no
+  text layer will be rejected with a clear message rather than silently
+  indexed as empty. See the [roadmap](#roadmap).
+
+---
+
+## Quick start
+
+**Prerequisites:** Python 3.11+, and [Ollama](https://ollama.com) if you want
+generated summaries and chat answers.
+
+```bash
+git clone https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system.git
+cd Roneira-AI-LLM-powered-document-intelligence-system
+
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+cp .env.example .env
+uvicorn backend.main:app --reload
+```
+
+Open <http://localhost:8000/api/docs>.
+
+Nothing else is required. There is no database to provision — SQLite and an
+on-disk vector store are created on first run.
+
+### Try it in 60 seconds
+
+```bash
+# 1. Get a token (built-in development account)
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/token \
+  -d "username=demo&password=demo" | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# 2. Upload one of the sample documents bundled in docs/
+DOC=$(curl -s -X POST http://localhost:8000/api/documents/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@docs/samples/INV-2025-1001.pdf" | python -c "import sys,json; print(json.load(sys.stdin)['document_id'])")
+
+# 3. Watch it process
+curl -s "http://localhost:8000/api/documents/$DOC/status" -H "Authorization: Bearer $TOKEN"
+
+# 4. Search it
+curl -s -X POST http://localhost:8000/api/search \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"query":"total amount due","top_k":3}'
+
+# 5. Ask a question
+curl -s -X POST http://localhost:8000/api/chat \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"message":"What is the invoice total and who is it billed to?"}'
+```
+
+### Or load the whole sample corpus at once
+
+```bash
+python scripts/load_samples.py
+```
+
+The repository ships **22 sample documents** in
+[`docs/samples/`](docs/samples/) — ten invoices, ten HR policies and two
+long-form text files, all synthetic. The loader uploads them, waits for
+indexing, and tells you how many searchable chunks resulted.
+[`docs/samples/README.md`](docs/samples/README.md) lists questions worth
+asking of each set.
+
+### Turning on semantic search
+
+Out of the box, search matches **keywords**. To match meaning — so "how much do
+we owe?" finds "total amount due" — install the embedding model:
+
+```bash
+pip install sentence-transformers
+```
+
+The first run downloads ~90MB. To make the service refuse to start rather than
+silently fall back, set `REQUIRE_REAL_EMBEDDINGS=true`.
+
+### Turning on summaries and chat
+
+```bash
+ollama pull llama3.2:3b
+ollama serve
+```
+
+Without Ollama the service still extracts, indexes and searches documents; it
+just cannot summarise them or answer in prose. `/api/health` will report
+`degraded` with the reason.
+
+### With Docker
+
+```bash
+cp .env.example .env
+docker compose up
+
+# with Prometheus and Grafana:
+docker compose --profile observability up
+```
+
+| Service | URL |
+|---|---|
+| API | <http://localhost:8000/api/docs> |
+| Frontend | <http://localhost:3000> |
+| Grafana | <http://localhost:3001> (admin/admin) |
+| Prometheus | <http://localhost:9090> |
+
+### Frontend
+
+```bash
+npm install
+npm run dev        # http://localhost:3000, proxies /api to the backend
+```
+
+---
+
+## API
+
+Full interactive reference at `/api/docs`. The endpoints you will actually use:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/auth/token` | Exchange credentials for a bearer token |
+| `GET` | `/api/auth/me` | Check who the current token belongs to |
+| `POST` | `/api/documents/upload` | Upload a document (202, processed in background) |
+| `GET` | `/api/documents` | List your documents, paginated |
+| `GET` | `/api/documents/{document_id}/status` | Processing progress |
+| `GET` | `/api/documents/{document_id}` | Extracted text, metadata and AI analysis |
+| `GET` | `/api/documents/{document_id}/source` | Download the original file |
+| `DELETE` | `/api/documents/{document_id}` | Delete the document, its chunks and its vectors |
+| `POST` | `/api/search` | Semantic/keyword search with citations |
+| `POST` | `/api/chat` | Grounded question answering |
+| `GET` | `/api/rag/stats` | Index size and embedding backend |
+| `POST` | `/api/feedback` | Rate an answer |
+| `GET` | `/api/health` | Component-level health |
+| `GET` | `/api/metrics` | Prometheus metrics |
+
+Every document endpoint is scoped to the authenticated caller. A document
+belonging to another user returns `404`, not `403` — its existence is not
+confirmed either way.
+
+### Reading a chat response
+
+```jsonc
+{
+  "message": "The invoice total is $12,480.00, billed to Contoso Ltd.",
+  "session_id": "5f2a…",
+  "grounded": true,              // built from retrieved passages, not model memory
+  "embeddings_are_real": true,   // false means keyword-only matching
+  "sources": [
+    {
+      "document_id": "8c1e…",
+      "chunk_id": "8c1e…_chunk_3",
+      "filename": "INV-2025-1001.pdf",
+      "page_number": 1,          // open this page to verify
+      "score": 0.82,
+      "content_preview": "Total amount due: $12,480.00 …"
+    }
+  ]
+}
+```
+
+`grounded: false` means the answer is **not** supported by your documents.
+
+---
+
+## Configuration
+
+Every variable is read by `backend/core/config.py`; anything not defined there
+has no effect. See [`.env.example`](.env.example) for the annotated list. The
+ones that change behaviour most:
+
+| Variable | Default | Why you would change it |
+|---|---|---|
+| `ENVIRONMENT` | `development` | `production` enables startup checks that refuse unsafe config |
+| `SECRET_KEY` | placeholder | **Must** be changed for production; ≥32 chars |
+| `REQUIRE_AUTHENTICATION` | `true` | `false` opens every endpoint — local experiments only |
+| `REQUIRE_REAL_EMBEDDINGS` | `false` | `true` fails startup rather than degrading to keyword search |
+| `RETAIN_SOURCE_FILES` | `true` | `false` where documents must not be kept at rest |
+| `SOURCE_RETENTION_DAYS` | `30` | How long retained originals live |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | `1000` / `200` | Retrieval granularity |
+| `RETRIEVAL_MIN_SCORE` | `0.15` | Raise to cut weak citations, lower to widen recall |
+| `DATABASE_URL` | SQLite | PostgreSQL is required for more than one worker |
+
+Setting `ENVIRONMENT=production` makes the service **refuse to start** with a
+placeholder secret key, authentication disabled, wildcard CORS, or debug on.
+That is deliberate: those are configuration mistakes you want to discover at
+deploy time, not from an incident.
+
+---
 
 ## Architecture
 
 ```mermaid
 graph TB
-    A[Client Applications] --> B[Load Balancer]
-    B --> C[FastAPI Application]
-    C --> D[Document Intelligence Service]
-    C --> E[Authentication Service]
-    C --> F[WebSocket Manager]
-    
-    D --> G[Azure Document Intelligence]
-    D --> H[Language Model Service]
-    D --> I[Database]
-    
-    C --> J[Redis Cache]
-    
-    I --> K[(PostgreSQL/SQLite)]
-    J --> L[(Redis)]
-    
-    style C fill:#e1f5fe
-    style D fill:#f3e5f5
-    style I fill:#e8f5e8
+    Client[Browser / API client] --> MW
+
+    subgraph API["FastAPI application"]
+        MW[Correlation ID → Security headers → Rate limit → Metrics]
+        MW --> Auth[Bearer auth + ownership scoping]
+        Auth --> Routers[Document / Chat / System routers]
+    end
+
+    Routers --> Processor[DocumentProcessorService]
+    Routers --> Chat[ChatService]
+
+    Processor --> Extract[Text extraction<br/>pdfplumber / python-docx]
+    Processor --> Retrieval
+    Chat --> Retrieval
+
+    Retrieval[RetrievalService<br/>single shared instance] --> Embed[EmbeddingService]
+    Retrieval --> Vectors[(ChromaDB<br/>persisted)]
+
+    Processor --> Repo[DocumentRepository]
+    Chat --> LLM[Ollama]
+    Processor --> LLM
+
+    Repo --> DB[(SQLite / PostgreSQL)]
+
+    style Retrieval fill:#e1f5fe
+    style Repo fill:#e8f5e8
 ```
 
-## Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-- Docker and Docker Compose
-- Azure Account with AI Services
-- Git
-
-### Development Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system.git
-   cd Roneira-AI-LLM-powered-document-intelligence-system
-   ```
-
-2. **Set up Python environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-3. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-4. **Start services with Docker**
-   ```bash
-   docker-compose up -d redis postgres
-   ```
-
-5. **Run the application**
-   ```bash
-   python -m uvicorn app.main:app --reload
-   ```
-
-6. **Access the API**
-   - API: http://localhost:8000
-   - Documentation: http://localhost:8000/api/docs
-   - Health Check: http://localhost:8000/health
-
-### Production Deployment
-
-#### Deploy to Railway
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/your-template-id)
-
-1. Connect your GitHub repository to Railway
-2. Set environment variables in Railway dashboard
-3. Deploy automatically with git push
-
-#### Deploy to Render
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system)
-
-1. Fork this repository
-2. Connect to Render
-3. Configure using `deployment/render.yaml`
-
-#### Deploy to Vercel (Serverless)
-
-```bash
-npm i -g vercel
-vercel --prod
-```
-
-## API Documentation
-
-### Authentication
-
-```bash
-# Get access token
-curl -X POST "http://localhost:8000/api/auth/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=demo&password=demo"
-```
-
-### Document Upload
-
-```bash
-# Upload document
-curl -X POST "http://localhost:8000/api/documents/upload" \
-  -H "Authorization: Bearer <token>" \
-  -F "file=@document.pdf"
-```
-
-### Check Processing Status
-
-```bash
-# Get document status
-curl -X GET "http://localhost:8000/api/documents/{document_id}/status" \
-  -H "Authorization: Bearer <token>"
-```
-
-### Real-time Updates
-
-```javascript
-// WebSocket connection for real-time updates
-const ws = new WebSocket('ws://localhost:8000/ws/{document_id}');
-
-ws.onmessage = function(event) {
-    const update = JSON.parse(event.data);
-    console.log('Processing update:', update);
-};
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `ENVIRONMENT` | Runtime environment | `development` | No |
-| `SECRET_KEY` | JWT secret key | - | Yes |
-| `DATABASE_URL` | Database connection URL | `sqlite:///./documents.db` | No |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | No |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | - | Yes |
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint | - | Yes |
-| `AZURE_DOCUMENT_INTELLIGENCE_KEY` | Azure Document Intelligence key | - | Yes |
-| `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Azure Document Intelligence endpoint | - | Yes |
-| `MAX_FILE_SIZE_MB` | Maximum file size in MB | `10` | No |
-| `RATE_LIMIT_REQUESTS_PER_MINUTE` | API rate limit | `60` | No |
-
-### Example Configuration
-
-```env
-# .env file
-ENVIRONMENT=production
-SECRET_KEY=your-super-secure-secret-key-here
-DATABASE_URL=postgresql://user:password@host:port/database
-REDIS_URL=redis://host:port/0
-
-# Azure AI Services
-AZURE_OPENAI_API_KEY=your-azure-openai-key
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-AZURE_DOCUMENT_INTELLIGENCE_KEY=your-document-intelligence-key
-AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
-
-# Application Settings
-MAX_FILE_SIZE_MB=50
-RATE_LIMIT_REQUESTS_PER_MINUTE=100
-```
-
-## Development
-
-### Project Structure
-
-```
-┌── app/
-│   ├── core/              # Core functionality
-│   │   ├── authentication.py
-│   │   ├── database_manager.py
-│   │   └── exceptions.py
-│   ├── services/          # Business logic
-│   │   ├── document_intelligence_service.py
-│   │   ├── cache_service.py
-│   │   └── language_model_service.py
-│   └── main.py            # FastAPI application
-├── tests/              # Test suite
-├── deployment/         # Deployment configurations
-├── .github/workflows/  # CI/CD pipelines
-└── config.py           # Application configuration
-```
-
-### Code Quality
-
-This project follows modern Python development practices:
-
-```bash
-# Format code
-black app/ tests/
-isort app/ tests/
-
-# Lint code
-flake8 app/ tests/
-mypy app/
-
-# Security check
-bandit -r app/
-safety check
-
-# Run tests
-pytest tests/ -v --cov=app
-```
-
-### Adding New Features
-
-1. **Create feature branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Implement feature with tests**
-   - Add business logic in `app/services/`
-   - Add tests in `tests/`
-   - Update documentation
-
-3. **Ensure code quality**
-   ```bash
-   make lint test
-   ```
-
-4. **Create pull request**
-   - CI/CD pipeline will run automatically
-   - Code review required for main branch
-
-## Performance
-
-### Benchmarks
-
-| Metric | Value |
-|--------|-------|
-| Document Processing | ~5-10 seconds avg |
-| Concurrent Users | 100+ supported |
-| API Response Time | <200ms (health check) |
-| Memory Usage | ~200MB base |
-| CPU Usage | ~10% idle, ~80% processing |
-
-### Optimization Tips
-
-- Use Redis for caching frequently accessed data
-- Implement proper connection pooling
-- Monitor with application performance monitoring (APM)
-- Scale horizontally with load balancers
-
-## Security
-
-### Security Features
-
-- **Authentication**: JWT tokens with expiration
-- **Authorization**: Role-based access control
-- **Input Validation**: Comprehensive request validation
-- **Rate Limiting**: Prevent API abuse
-- **File Upload Security**: Type and size validation
-- **Secrets Management**: Environment variable configuration
-- **Security Headers**: CORS, CSP, and other security headers
-
-### Security Best Practices
-
-- Keep dependencies updated
-- Use strong secret keys (32+ characters)
-- Enable HTTPS in production
-- Regular security audits with `bandit` and `safety`
-- Monitor logs for suspicious activity
-
-## Monitoring and Observability
-
-### Health Checks
-
-- **Application Health**: `/health` endpoint
-- **Service Dependencies**: Database, Redis, Azure services
-- **Performance Metrics**: Response times, error rates
-
-### Logging
-
-```python
-# Structured logging example
-logger.info(
-    "Document processed",
-    extra={
-        "document_id": document_id,
-        "user_id": user_id,
-        "processing_time": processing_time,
-        "status": "completed"
-    }
-)
-```
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### Quick Contribution Guide
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
-
-### Development Environment Setup
-
-```bash
-# Install development dependencies
-pip install -r requirements.txt
-
-# Install pre-commit hooks
-pre-commit install
-
-# Run tests before committing
-pytest tests/ -v
-```
-
-## Support
-
-- **Documentation**: [API Documentation](https://your-app.com/docs)
-- **Issues**: [GitHub Issues](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/discussions)
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-- 🎉 **Initial**: Web interface and API endpoints
+The single most important edge is that **one** `RetrievalService` is shared by
+document processing and chat. When each constructed its own, uploads went into
+one vector store and questions searched a different, empty one.
+
+Deeper detail — data model, request flow, failure modes and the list of
+modules that are present but not wired in — is in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
-**Made with ❤️ by [Aaron Sequeira](https://github.com/aaron-seq)**
+## Development
 
-⭐ Star this repository if you find it useful!
+```bash
+pytest                              # 181 tests, 70% coverage gate
+pytest backend/tests/test_auth.py   # one file
+ruff check backend/ && ruff format backend/
+mypy backend/core backend/api backend/repositories --ignore-missing-imports
+
+npm run type-check && npm run lint && npm run build
+```
+
+CI runs all of the above plus a smoke job that boots the application and
+drives a document from upload through to a successful search — the check that
+would have caught the import error which made the service unstartable.
+
+Contribution guidelines: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## Roadmap
+
+Ordered by how much each would improve the product for a real user.
+
+### Next
+
+- **OCR for scanned documents.** `free_ocr_service.py` exists but is not
+  wired in, so image-only PDFs are rejected. This is the single largest gap
+  between the promise and the behaviour.
+- **Table extraction.** `extract_tables` is accepted as an upload option and
+  currently ignored; invoices and reports are mostly tables.
+- **Structured field extraction.** Pull invoice number, totals, dates and
+  parties into typed fields rather than prose, so results can be exported.
+- **Streaming chat responses.** `stream_chat` fakes streaming by chunking a
+  finished answer; wire it to Ollama's streaming endpoint.
+
+### After that
+
+- **PII detection on ingest.** `pii_detection_service.py` is written and
+  unused. Flagging PII at upload, with the option to redact before indexing,
+  is what makes this deployable in regulated settings.
+- **Hybrid retrieval.** Combine keyword (BM25) with vector scores; each fails
+  on cases the other handles.
+- **Reranking.** A cross-encoder over the top 20 candidates measurably
+  improves citation precision.
+- **Document comparison.** "What changed between v1 and v2 of this contract."
+- **A real user store.** Registration, password reset, and roles backed by
+  the database rather than a dict.
+
+### Longer term
+
+- Multi-tenant workspaces with shared document collections.
+- A retrieval evaluation harness with a labelled question set, so changes to
+  chunking or embeddings can be measured rather than guessed at.
+- Webhooks and an async job queue (Celery/arq) so processing survives a
+  restart mid-document.
+- Connectors: S3, Google Drive, SharePoint, email.
+
+Known limitations are listed honestly in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Request flow, data model, failure modes, unwired modules |
+| [docs/SECURITY.md](docs/SECURITY.md) | Threat model, what to change before real data, reporting |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production checklist, scaling, backups |
+| [docs/OLLAMA_SETUP.md](docs/OLLAMA_SETUP.md) | Installing the local LLM, per platform |
+| [docs/samples/README.md](docs/samples/README.md) | The demo corpus and what to ask it |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, conventions, review expectations |
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Built by [Aaron Sequeira](https://github.com/aaron-seq).
