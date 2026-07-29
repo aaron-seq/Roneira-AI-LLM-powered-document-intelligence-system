@@ -7,7 +7,7 @@ import { HelmetProvider } from 'react-helmet-async';
 import { ErrorBoundary } from 'react-error-boundary';
 import { Toaster } from 'react-hot-toast';
 
-import { theme } from './theme';
+import { theme } from '../theme';
 import { globalStyles } from '@/styles/globalStyles';
 
 import { AuthProvider } from '@/contexts/AuthContext';

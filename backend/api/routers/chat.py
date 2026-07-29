@@ -14,13 +14,16 @@ from backend.api.dependencies import (
 )
 from backend.api.security import CurrentUser, get_current_user
 from backend.models.chat_models import (
+    ChatMessageModel,
     ChatRequest,
+    ChatSource,
     ConversationHistoryResponse,
     IndexDocumentRequest,
     IndexDocumentResponse,
     RAGStatsResponse,
     SearchRequest,
     SearchResponse,
+    SearchResult,
 )
 from backend.models.chat_models import (
     ChatResponse as ChatAPIResponse,
@@ -79,7 +82,7 @@ async def chat_completion(
     return ChatAPIResponse(
         message=response.message,
         session_id=response.session_id,
-        sources=response.sources,
+        sources=[ChatSource.model_validate(source) for source in response.sources],
         model=response.model,
         grounded=bool(response.usage.get("grounded")),
         embeddings_are_real=bool(response.usage.get("embeddings_are_real")),
@@ -124,7 +127,7 @@ async def semantic_search(
 
     return SearchResponse(
         query=request.query,
-        results=results,
+        results=[SearchResult.model_validate(r) for r in results],
         total_results=len(results),
         embeddings_are_real=chat_service.retrieval.embeddings_are_real,
     )
@@ -179,7 +182,9 @@ async def get_conversation_history(
     """Return the message history for a session."""
     history = await chat_service.get_session_history(session_id)
     return ConversationHistoryResponse(
-        session_id=session_id, messages=history, message_count=len(history)
+        session_id=session_id,
+        messages=[ChatMessageModel.model_validate(m) for m in history],
+        message_count=len(history),
     )
 
 

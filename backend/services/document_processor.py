@@ -172,14 +172,10 @@ class DocumentProcessorService:
                 progress_callback,
             )
 
+            # Raises TextExtractionError with a message written for the user;
+            # the handler below records it on the document.
             extracted_text, doc_metadata = await extract_text_from_file(file_path)
             doc_metadata = {**doc_metadata, "filename": filename}
-
-            if not extracted_text.strip():
-                raise ValueError(
-                    "No text could be extracted from this document. It may be a "
-                    "scanned image without OCR, or an empty or corrupt file."
-                )
 
             await self._advance(
                 document_id,

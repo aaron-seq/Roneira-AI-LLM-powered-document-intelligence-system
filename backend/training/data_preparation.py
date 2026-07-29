@@ -324,6 +324,6 @@ class DataPreparationService:
         return True
 
     def _compute_hash(self, example: TrainingExample) -> str:
-        """Compute hash for deduplication."""
+        """Compute hash for deduplication (not a security primitive)."""
         content = f"{example.input_text}|{example.output_text}"
-        return hashlib.md5(content.encode()).hexdigest()
+        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()

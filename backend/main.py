@@ -167,7 +167,10 @@ app = create_application()
 if __name__ == "__main__":
     uvicorn.run(
         "backend.main:app",
-        host="0.0.0.0",
+        # Binding all interfaces is required inside a container, where
+        # localhost is not reachable from outside. Override with HOST when
+        # running directly on a machine with other listeners.
+        host=os.getenv("HOST", "0.0.0.0"),  # nosec B104
         port=int(os.getenv("PORT", "8000")),
         reload=settings.environment == "development",
         log_level=settings.log_level.lower(),

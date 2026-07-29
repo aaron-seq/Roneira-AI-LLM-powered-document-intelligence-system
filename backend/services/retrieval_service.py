@@ -225,7 +225,10 @@ class RetrievalService:
                     VectorDocument(
                         chunk_id=chunk_id,
                         document_id=document_id,
-                        content=chunk.content,
+                        # The page marker is captured in metadata above; keeping
+                        # it in the body would put "--- Page 3 ---" into every
+                        # citation preview and into the model's context.
+                        content=_strip_page_markers(chunk.content),
                         embedding=embedding_result.embedding,
                         metadata=chunk_metadata,
                     )
@@ -234,7 +237,7 @@ class RetrievalService:
                     {
                         "chunk_id": chunk_id,
                         "chunk_index": i,
-                        "content": chunk.content,
+                        "content": _strip_page_markers(chunk.content),
                         "page_number": page_number,
                         "start_char": chunk.start_char,
                         "end_char": chunk.end_char,
@@ -463,6 +466,11 @@ class RetrievalService:
 # --------------------------------------------------------------------------
 
 _PAGE_MARKER = re.compile(r"^--- Page (\d+) ---$", re.MULTILINE)
+
+
+def _strip_page_markers(text: str) -> str:
+    """Remove page separators from text shown to users or sent to the model."""
+    return re.sub(r"\n{2,}", "\n\n", _PAGE_MARKER.sub("", text)).strip()
 
 
 def _page_offsets(content: str) -> List[tuple]:

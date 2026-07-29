@@ -237,9 +237,14 @@ class RequestBatcher:
         return str(uuid.uuid4())
 
     def _hash_prompt(self, prompt: str, system_prompt: Optional[str]) -> str:
-        """Create hash for deduplication."""
+        """Create hash for deduplication.
+
+        Content addressing, not a security primitive: usedforsecurity=False
+        also keeps this working under a FIPS-enabled interpreter, where a
+        plain md5() call raises.
+        """
         content = f"{system_prompt or ''}|{prompt}"
-        return hashlib.md5(content.encode()).hexdigest()
+        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
 
     def get_stats(self) -> Dict[str, Any]:
         """Get batcher statistics.
@@ -338,9 +343,9 @@ class MemoizationCache:
         self._access_order.append(key)
 
     def _make_key(self, prompt: str, system_prompt: Optional[str]) -> str:
-        """Create cache key."""
+        """Create cache key (content addressing, not a security primitive)."""
         content = f"{system_prompt or ''}|{prompt}"
-        return hashlib.md5(content.encode()).hexdigest()
+        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
 
     def clear(self) -> None:
         """Clear all cached entries."""

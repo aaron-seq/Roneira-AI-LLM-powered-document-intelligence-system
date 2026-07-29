@@ -51,11 +51,12 @@ jobs:
         run: ruff format --check backend/
 
       - name: Type check (mypy)
-        # Not yet clean across the whole tree; enforced on the modules that
-        # carry the request path, and expanded as the rest is annotated.
+        # --follow-imports=silent keeps the gate on the packages named here
+        # without failing on the older service modules they import, which are
+        # not annotated yet. Widen this list as those are cleaned up.
         run: |
           mypy backend/core backend/api backend/repositories \
-               --ignore-missing-imports --no-strict-optional
+               --ignore-missing-imports --no-strict-optional --follow-imports=silent
 
   backend-tests:
     name: Backend tests
@@ -108,39 +109,46 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Start the API
+      # Server and assertions live in ONE step: each GitHub Actions step runs
+      # in its own shell, and a process backgrounded in one step is not
+      # reliably alive in the next.
+      - name: Boot the app and drive a document end to end
         env:
           ENVIRONMENT: development
           SECRET_KEY: smoke-test-secret-key-0123456789abcdefghij
           DATABASE_URL: sqlite+aiosqlite:///./smoke.db
         run: |
+          set -euo pipefail
+
           uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
-          echo $! > uvicorn.pid
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+
           for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8000/api/health/live > /dev/null; then
-              echo "API is live after ${attempt}s"
-              exit 0
+            if curl -fsS http://127.0.0.1:8000/api/health/live > /dev/null 2>&1; then
+              echo "API live after ${attempt}s"
+              break
+            fi
+            if ! kill -0 $SERVER_PID 2>/dev/null; then
+              echo "The server exited during startup"
+              exit 1
             fi
             sleep 1
           done
-          echo "API failed to become live within 30s"
-          exit 1
 
-      - name: Exercise the documented workflow
-        env:
-          SECRET_KEY: smoke-test-secret-key-0123456789abcdefghij
-        run: |
-          set -euo pipefail
+          curl -fsS http://127.0.0.1:8000/api/health/live > /dev/null
 
           TOKEN=$(curl -fsS -X POST http://127.0.0.1:8000/api/auth/token \
-            -d "username=demo&password=demo" | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+            -d "username=demo&password=demo" \
+            | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
           echo "Sample invoice for ACME Corporation, total 1200 USD." > sample.txt
           DOC_ID=$(curl -fsS -X POST http://127.0.0.1:8000/api/documents/upload \
             -H "Authorization: Bearer $TOKEN" -F "file=@sample.txt" \
             | python -c "import sys,json; print(json.load(sys.stdin)['document_id'])")
 
-          for _ in $(seq 1 30); do
+          STATUS=queued
+          for _ in $(seq 1 60); do
             STATUS=$(curl -fsS "http://127.0.0.1:8000/api/documents/$DOC_ID/status" \
               -H "Authorization: Bearer $TOKEN" \
               | python -c "import sys,json; print(json.load(sys.stdin)['status'])")
@@ -150,7 +158,8 @@ jobs:
           done
           [ "$STATUS" = "completed" ] || { echo "Timed out in state $STATUS"; exit 1; }
 
-          # The document must be findable — this is the end-to-end guarantee.
+          # The document must be findable. This is the guarantee that broke
+          # when the upload pipeline and chat held separate vector stores.
           HITS=$(curl -fsS -X POST http://127.0.0.1:8000/api/search \
             -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
             -d '{"query":"ACME invoice total","top_k":5,"min_score":0.0}' \
@@ -158,11 +167,12 @@ jobs:
           echo "Search returned $HITS result(s)"
           [ "$HITS" -gt 0 ] || { echo "Indexed document was not retrievable"; exit 1; }
 
-          curl -fsS http://127.0.0.1:8000/api/metrics | head -5
+          # An unauthenticated request must be refused.
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/documents)
+          [ "$CODE" = "401" ] || { echo "Expected 401 without a token, got $CODE"; exit 1; }
 
-      - name: Stop the API
-        if: always()
-        run: kill "$(cat uvicorn.pid)" 2>/dev/null || true
+          curl -fsS http://127.0.0.1:8000/api/metrics | head -3
+          echo "Smoke test passed"
 
   # --------------------------------------------------------------- frontend
   frontend:

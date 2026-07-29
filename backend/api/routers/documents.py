@@ -138,7 +138,7 @@ async def list_documents(
         ) from exc
 
     return DocumentListResponse(
-        documents=documents,
+        documents=[DocumentStatusResponse.model_validate(d) for d in documents],
         total=total,
         limit=limit,
         offset=offset,
