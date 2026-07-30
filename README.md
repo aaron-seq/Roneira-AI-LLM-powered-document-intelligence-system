@@ -185,7 +185,7 @@ confirmed either way.
 {
   "message": "The invoice total is $12,480.00, billed to Contoso Ltd.",
   "session_id": "5f2a…",
-  "grounded": true,              // built from retrieved passages, not model memory
+  "grounded": true,              // the answer text was built from the passages below
   "embeddings_are_real": true,   // false means keyword-only matching
   "sources": [
     {
@@ -200,7 +200,11 @@ confirmed either way.
 }
 ```
 
-`grounded: false` means the answer is **not** supported by your documents.
+`grounded: false` means the answer is **not** supported by your documents —
+either retrieval found nothing above the threshold, or the language model was
+unavailable so no answer could be composed at all. In the second case the
+retrieved passages are still returned in `sources`, so you can read them
+yourself; they are simply not presented as a cited answer.
 
 ---
 
@@ -274,7 +278,7 @@ modules that are present but not wired in  is in
 ## Development
 
 ```bash
-pytest                              # 181 tests, 70% coverage gate
+pytest                              # 183 tests, 70% coverage gate
 pytest backend/tests/test_auth.py   # one file
 ruff check backend/ && ruff format backend/
 mypy backend/core backend/api backend/repositories --ignore-missing-imports
@@ -287,6 +291,24 @@ drives a document from upload through to a successful search  the check that
 would have caught the import error which made the service unstartable.
 
 Contribution guidelines: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## Troubleshooting
+
+Failure modes that have actually happened here, and what each one means.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'backend'` from `pytest` | The repository root is not on `sys.path`. `python -m pytest` adds it, a bare `pytest` does not | `pytest.ini` sets `pythonpath = .`; if you removed it, run `python -m pytest` |
+| `ruff check` fails with `Unknown rule selector: ASYNC240` | Your ruff is older than the pinned one | `pip install -r requirements.txt` (ruff is pinned there) |
+| Chat answers say the model is not running | Ollama is not reachable | `ollama serve`, or accept degraded mode — extraction, indexing and search still work |
+| Every answer has `embeddings_are_real: false` | `sentence-transformers` is not installed, so search is keyword-only | `pip install sentence-transformers` |
+| Service refuses to start naming `SECRET_KEY`/`ALLOWED_HOSTS` | `ENVIRONMENT=production` with unsafe config | That check is deliberate — fix the config, do not set `ENVIRONMENT=development` |
+| A scanned PDF is rejected | It has no text layer and OCR is not wired in | Known gap — see the roadmap |
+| Windows: `PermissionError: [WinError 32]` tearing down tests | ChromaDB holds `chroma.sqlite3` open; the temp dir cannot be unlinked | Already ignored in `conftest.py`; it is a teardown artefact, not a test failure |
+| Windows: Python crashes under Git Bash with `TP_NUM_C_BUFS too small` | A Cygwin/MSYS limitation, not a project bug | Run Python, `pytest` and `uvicorn` from PowerShell or `cmd` |
+| Frontend loads a different app on `localhost:3000` | Another process owns IPv6 `::1:3000`; Vite binds IPv4 | Use `http://127.0.0.1:3000`, or free the port |
 
 ---
 

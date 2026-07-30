@@ -15,6 +15,7 @@ from backend.services.local_llm_service import LocalLLMService
 from backend.services.memory_service import MemoryService
 from backend.services.prompt_service import PromptService
 from backend.services.retrieval_service import RetrievalService
+from backend.utils.exceptions import LLMUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -162,15 +163,36 @@ class ChatService:
             history=history[:-1] if len(history) > 1 else None,  # Exclude current
         )
 
-        response_text = await self._generate_response(chat_messages)
+        retrieved_anything = grounded
+        llm_failed = False
+        try:
+            response_text = await self._generate_response(chat_messages)
+        except LLMUnavailableError as exc:
+            llm_failed = True
+            response_text = exc.message
 
-        if use_rag and not grounded:
+        # `grounded` promises the answer was *built from* the retrieved
+        # passages. Retrieval succeeding is not enough: if generation failed
+        # there is no answer to ground, and reporting True would put a
+        # "grounded" badge and a citation list beside a failure notice.
+        grounded = retrieved_anything and not llm_failed
+
+        if use_rag and not retrieved_anything:
             # Say so rather than letting the model answer from parametric
             # memory while the UI shows an empty citation list.
-            response_text = (
-                "I could not find anything in your indexed documents that "
-                "answers this. Answering from general knowledge instead, so "
-                "please verify independently.\n\n" + response_text
+            preamble = (
+                "I could not find anything in your indexed documents that answers this. "
+            )
+            if not llm_failed:
+                preamble += (
+                    "Answering from general knowledge instead, so please "
+                    "verify independently.\n\n"
+                )
+            response_text = preamble + response_text
+        elif llm_failed:
+            response_text += (
+                " The sources below are the closest matches in your documents; "
+                "read them directly to verify."
             )
 
         await self.memory.add_assistant_message(session_id, response_text)

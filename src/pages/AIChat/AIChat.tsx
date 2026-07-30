@@ -29,7 +29,9 @@ import {
     Refresh,
     Settings,
     ArrowBack,
-    Download
+    Download,
+    VerifiedUser,
+    WarningAmber
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -40,11 +42,18 @@ import { apiClient } from '../../api/client';
 // Document Intelligence with RAG (Retrieval Augmented Generation)
 // ==============================================================================
 
+// Mirrors the `sources[]` entries of POST /api/chat exactly. The previous
+// shape ({ id, relevance, excerpt }) matched no field the API returns, so
+// every citation rendered an empty excerpt and every download requested
+// /documents/undefined/source. axios types responses as `any`, so nothing
+// failed at compile time — only in front of a user.
 interface DocumentReference {
-    id: string;
-    filename: string;
-    relevance: number;
-    excerpt: string;
+    document_id: string;
+    chunk_id: string;
+    filename: string | null;
+    page_number: number | null;
+    score: number;
+    content_preview: string;
 }
 
 interface ChatMessage {
@@ -55,6 +64,12 @@ interface ChatMessage {
     references?: DocumentReference[];
     isLoading?: boolean;
     isDetailed?: boolean;
+    // Honesty signals from the API. `grounded` is false when the answer is not
+    // supported by the user's documents; `embeddingsAreReal` is false when
+    // search has degraded to keyword matching. Both were previously dropped on
+    // the floor, so a degraded answer looked identical to a trustworthy one.
+    grounded?: boolean;
+    embeddingsAreReal?: boolean;
 }
 
 const AIChat = () => {
@@ -185,11 +200,13 @@ const AIChat = () => {
             if (data) {
                 setMessages(prev => prev.map(msg => 
                     msg.id === assistantMessage.id 
-                        ? { 
-                            ...msg, 
-                            content: data.message, 
-                            isLoading: false, 
-                            references: data.sources 
+                        ? {
+                            ...msg,
+                            content: data.message,
+                            isLoading: false,
+                            references: data.sources,
+                            grounded: data.grounded,
+                            embeddingsAreReal: data.embeddings_are_real,
                         }
                         : msg
                 ));
@@ -242,7 +259,14 @@ const AIChat = () => {
             if (data) {
                 setMessages(prev => prev.map(msg => 
                     msg.id === messageId 
-                        ? { ...msg, content: data.message, isLoading: false, references: data.sources }
+                        ? {
+                            ...msg,
+                            content: data.message,
+                            isLoading: false,
+                            references: data.sources,
+                            grounded: data.grounded,
+                            embeddingsAreReal: data.embeddings_are_real,
+                        }
                         : msg
                 ));
             } else {
@@ -384,7 +408,45 @@ const AIChat = () => {
                                     >
                                         {message.content}
                                     </Typography>
-                                    
+
+                                    {/* Honesty signals. An answer the documents do not support, or
+                                        one found by keyword matching rather than meaning, must not
+                                        look identical to a fully grounded one. */}
+                                    {message.role === 'assistant' && message.grounded !== undefined && (
+                                        <Box sx={{ display: 'flex', gap: 1, mt: 1.5, flexWrap: 'wrap' }}>
+                                            <Chip
+                                                size="small"
+                                                icon={message.grounded ? <VerifiedUser sx={{ fontSize: 14 }} /> : <WarningAmber sx={{ fontSize: 14 }} />}
+                                                label={message.grounded ? 'Grounded in your documents' : 'Not supported by your documents'}
+                                                sx={{
+                                                    height: 22,
+                                                    fontSize: '0.68rem',
+                                                    color: message.grounded ? '#10b981' : '#f59e0b',
+                                                    borderColor: message.grounded ? 'rgba(16,185,129,0.4)' : 'rgba(245,158,11,0.4)',
+                                                    background: message.grounded ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+                                                }}
+                                                variant="outlined"
+                                            />
+                                            {message.embeddingsAreReal === false && (
+                                                <Tooltip title="No embedding model is loaded, so search is matching keywords rather than meaning. Paraphrased questions may miss the right passage.">
+                                                    <Chip
+                                                        size="small"
+                                                        icon={<WarningAmber sx={{ fontSize: 14 }} />}
+                                                        label="Keyword-only search"
+                                                        variant="outlined"
+                                                        sx={{
+                                                            height: 22,
+                                                            fontSize: '0.68rem',
+                                                            color: '#f59e0b',
+                                                            borderColor: 'rgba(245,158,11,0.4)',
+                                                            background: 'rgba(245,158,11,0.1)',
+                                                        }}
+                                                    />
+                                                </Tooltip>
+                                            )}
+                                        </Box>
+                                    )}
+
                                     {/* Document References */}
                                     {message.references && message.references.length > 0 && (
                                         <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(99, 102, 241, 0.2)' }}>
@@ -395,8 +457,8 @@ const AIChat = () => {
                                             
                                             <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
                                                 {message.references.map((ref, idx) => (
-                                                    <Box 
-                                                        key={ref.id}
+                                                    <Box
+                                                        key={ref.chunk_id}
                                                         sx={{
                                                             p: 1.5,
                                                             borderRadius: 2,
@@ -406,22 +468,34 @@ const AIChat = () => {
                                                         }}
                                                     >
                                                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                            <Box 
+                                                            <Box
                                                                 sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}
-                                                                onClick={() => toggleRefExpand(ref.id)}
+                                                                onClick={() => toggleRefExpand(ref.chunk_id)}
                                                             >
-                                                                <Chip 
-                                                                    label={idx + 1} 
-                                                                    size="small" 
-                                                                    sx={{ 
-                                                                        width: 24, 
+                                                                <Chip
+                                                                    label={idx + 1}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        width: 24,
                                                                         height: 24,
                                                                         fontSize: '0.7rem',
-                                                                        background: '#6366f1' 
-                                                                    }} 
+                                                                        background: '#6366f1'
+                                                                    }}
                                                                 />
                                                                 <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary' }}>
-                                                                    {ref.filename}
+                                                                    {ref.filename ?? 'Unknown document'}
+                                                                </Typography>
+                                                                {/* The page is what makes a citation checkable. */}
+                                                                {ref.page_number !== null && ref.page_number !== undefined && (
+                                                                    <Chip
+                                                                        label={`p. ${ref.page_number}`}
+                                                                        size="small"
+                                                                        variant="outlined"
+                                                                        sx={{ height: 20, fontSize: '0.65rem', color: '#06b6d4', borderColor: 'rgba(6,182,212,0.4)' }}
+                                                                    />
+                                                                )}
+                                                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                                    {Math.round(ref.score * 100)}% match
                                                                 </Typography>
                                                             </Box>
                                                             <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -430,20 +504,20 @@ const AIChat = () => {
                                                                         size="small" 
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
-                                                                            handleDownload(ref.id, ref.filename);
+                                                                            handleDownload(ref.document_id, ref.filename ?? ref.document_id);
                                                                         }}
                                                                         sx={{ color: '#06b6d4', mr: 1 }}
                                                                     >
                                                                         <Download fontSize="small" />
                                                                     </IconButton>
                                                                 </Tooltip>
-                                                                <IconButton size="small" onClick={() => toggleRefExpand(ref.id)}>
-                                                                    {expandedRefs.includes(ref.id) ? <ExpandLess /> : <ExpandMore />}
+                                                                <IconButton size="small" onClick={() => toggleRefExpand(ref.chunk_id)}>
+                                                                    {expandedRefs.includes(ref.chunk_id) ? <ExpandLess /> : <ExpandMore />}
                                                                 </IconButton>
                                                             </Box>
                                                         </Box>
                                                         
-                                                        <Collapse in={expandedRefs.includes(ref.id)}>
+                                                        <Collapse in={expandedRefs.includes(ref.chunk_id)}>
                                                             <Typography 
                                                                 variant="caption" 
                                                                 sx={{ 
@@ -457,7 +531,7 @@ const AIChat = () => {
                                                                     fontSize: '0.7rem',
                                                                 }}
                                                             >
-                                                                {ref.excerpt}
+                                                                {ref.content_preview}
                                                             </Typography>
                                                         </Collapse>
                                                     </Box>

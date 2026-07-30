@@ -33,17 +33,23 @@ class Settings(BaseSettings):
     """Application configuration."""
 
     # ---------------------------------------------------------------- app
-    app_name: str = Field(
-        default="Roneira Document Intelligence",
-        validation_alias=AliasChoices("APP_NAME", "app_name"),
-    )
+    # No validation_alias here: with case_sensitive=False the environment
+    # variables APP_NAME and ENVIRONMENT already resolve to these field names.
+    # Declaring AliasChoices("ENVIRONMENT", "environment") was actively harmful
+    # — pydantic resolves AliasChoices by *alias order*, not by source priority,
+    # so an ambient ENVIRONMENT variable silently overrode an explicit
+    # Settings(environment=...) argument. That is what made every production
+    # hardening test construct a development config and assert nothing.
+    app_name: str = Field(default="Roneira Document Intelligence")
+    # Where the public variable name genuinely differs from the field name an
+    # alias is required. The field name is listed first so an explicit keyword
+    # argument still wins over the environment.
     version: str = Field(
         default="2.1.0",
-        validation_alias=AliasChoices("APP_VERSION", "VERSION", "version"),
+        validation_alias=AliasChoices("version", "APP_VERSION", "VERSION"),
     )
     environment: Literal["development", "test", "staging", "production"] = Field(
         default="development",
-        validation_alias=AliasChoices("ENVIRONMENT", "environment"),
     )
     debug: bool = Field(default=True)
 
@@ -51,7 +57,7 @@ class Settings(BaseSettings):
     secret_key: str = Field(default="your-secret-key-change-in-production")
     algorithm: str = Field(
         default="HS256",
-        validation_alias=AliasChoices("JWT_ALGORITHM", "ALGORITHM", "algorithm"),
+        validation_alias=AliasChoices("algorithm", "JWT_ALGORITHM", "ALGORITHM"),
     )
     access_token_expire_minutes: int = Field(default=30, ge=1)
 

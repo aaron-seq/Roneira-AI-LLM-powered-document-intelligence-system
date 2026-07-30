@@ -105,6 +105,14 @@ Retrieval is restricted to documents the caller owns. Without that filter a
 user could ask questions whose answers are drawn from another tenant's files —
 the retrieval layer would happily supply them.
 
+`grounded` means *the answer text was built from the retrieved passages* — not
+merely that retrieval returned something. If generation fails there is no
+answer to ground, so `grounded` is false even though sources are present. The
+LLM service signals failure by raising `LLMUnavailableError` rather than
+returning an apology string; when both were plain strings the two were
+indistinguishable, and a "model is unavailable" notice was shipped as a
+`grounded: true` answer with a full citation list beside it.
+
 If nothing clears the threshold, the response sets `grounded: false` **and**
 prepends a sentence saying the answer is not supported by the documents. An
 ungrounded answer that looks identical to a grounded one is how RAG products
@@ -144,6 +152,7 @@ The design principle: **degrade visibly, never silently**.
 | Database down | Requests fail | `/api/health/ready` → 503; liveness stays 200 so the container is not killed |
 | Text extraction fails | Document marked `failed` with a readable reason; nothing indexed | Document status; `roneira_documents_processed_total{status="error"}` |
 | Retrieval matches nothing | Answer says so; `grounded: false` | `roneira_retrieval_queries_total{outcome="empty"}` |
+| LLM unreachable *during* a chat | `grounded: false`, the retrieved passages are still returned as sources so they can be read directly | `/api/health` → `degraded`; the answer text says the model is not running |
 | Indexing fails | Document marked `failed`, not `completed` | Document status |
 
 The lexical fallback deserves emphasis. When `sentence-transformers` is not

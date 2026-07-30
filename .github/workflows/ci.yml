@@ -41,8 +41,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          # ruff and mypy are pinned in requirements.txt. Installing them
+          # unpinned here meant CI silently linted with a different version
+          # than a developer has locally.
           pip install -r requirements.txt
-          pip install ruff mypy
 
       - name: Lint (ruff)
         run: ruff check backend/

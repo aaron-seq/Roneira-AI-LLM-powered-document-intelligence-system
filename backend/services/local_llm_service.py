@@ -11,6 +11,7 @@ import httpx
 
 from backend.core.config import get_settings
 from backend.observability.structured_logging import get_logger, with_correlation_id
+from backend.utils.exceptions import LLMUnavailableError
 
 # Initialize structured logger for telemetry
 logger = get_logger(__name__)
@@ -258,16 +259,29 @@ Respond ONLY with valid JSON, no additional text.
 
         Unlike enhance_document_data which returns structured JSON,
         this method returns raw text suitable for conversational AI.
+
+        Raises:
+            LLMUnavailableError: the model is not reachable or generation
+                failed. Signalled rather than returned so the caller can tell
+                a failure from an answer; previously both were plain strings,
+                so an apology was cited as a grounded, document-backed answer.
         """
         if not self.is_initialized:
             logger.warning("LLM service not initialized")
-            return "I apologize, but the AI service is currently unavailable. Please ensure Ollama is running and try again."
+            raise LLMUnavailableError(
+                "The language model is not running, so answers cannot be written."
+            )
 
         try:
             return await self._generate_response(prompt)
         except Exception as e:
+            # The exception text can carry the configured endpoint URL, so it
+            # is logged, never returned to the caller.
             logger.error(f"Error generating chat response: {e}")
-            return f"I encountered an error generating a response: {e!s}"
+            raise LLMUnavailableError(
+                "The language model failed while generating a response.",
+                original_error=e,
+            ) from e
 
     async def summarize_text(self, text: str, max_length: int = 200) -> str:
         """Generate a summary of the given text"""
