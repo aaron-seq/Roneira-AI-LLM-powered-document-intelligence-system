@@ -1,4 +1,4 @@
-# Roneira — Document Intelligence
+# Roneira  Document Intelligence
 
 Upload documents, ask questions about them, and get answers with citations
 back to the exact page they came from.
@@ -15,7 +15,7 @@ Runs entirely on your own machine. No API keys, no data leaving the host.
 
 You point it at a pile of PDFs, Word documents, scans or text files. It
 extracts the text, splits it into passages, indexes them, and then answers
-questions against **only those documents** — telling you which file and page
+questions against **only those documents**  telling you which file and page
 each part of the answer came from.
 
 **It is built for the case where being wrong is expensive.** Three properties
@@ -28,7 +28,7 @@ follow from that:
   relevance threshold, the answer says so instead of quietly falling back to
   the model's general knowledge next to an empty source list.
 - **It tells you when it is degraded.** If no embedding model is loaded,
-  search drops to keyword matching — and `/api/health`, `/api/rag/stats`,
+  search drops to keyword matching  and `/api/health`, `/api/rag/stats`,
   every chat response and a Prometheus gauge all report it.
 
 ### What it is not
@@ -39,7 +39,7 @@ Being clear about this saves you an evaluation:
 - The bundled `demo`/`admin` accounts are **development conveniences**, not a
   user management system. See [docs/SECURITY.md](docs/SECURITY.md) before
   putting real documents in it.
-- OCR for scanned images is not wired into the pipeline yet — a scan with no
+- OCR for scanned images is not wired into the pipeline yet  a scan with no
   text layer will be rejected with a clear message rather than silently
   indexed as empty. See the [roadmap](#roadmap).
 
@@ -63,7 +63,7 @@ uvicorn backend.main:app --reload
 
 Open <http://localhost:8000/api/docs>.
 
-Nothing else is required. There is no database to provision — SQLite and an
+Nothing else is required. There is no database to provision  SQLite and an
 on-disk vector store are created on first run.
 
 ### Try it in 60 seconds
@@ -99,7 +99,7 @@ python scripts/load_samples.py
 ```
 
 The repository ships **22 sample documents** in
-[`docs/samples/`](docs/samples/) — ten invoices, ten HR policies and two
+[`docs/samples/`](docs/samples/)  ten invoices, ten HR policies and two
 long-form text files, all synthetic. The loader uploads them, waits for
 indexing, and tells you how many searchable chunks resulted.
 [`docs/samples/README.md`](docs/samples/README.md) lists questions worth
@@ -107,8 +107,8 @@ asking of each set.
 
 ### Turning on semantic search
 
-Out of the box, search matches **keywords**. To match meaning — so "how much do
-we owe?" finds "total amount due" — install the embedding model:
+Out of the box, search matches **keywords**. To match meaning  so "how much do
+we owe?" finds "total amount due"  install the embedding model:
 
 ```bash
 pip install sentence-transformers
@@ -176,7 +176,7 @@ Full interactive reference at `/api/docs`. The endpoints you will actually use:
 | `GET` | `/api/metrics` | Prometheus metrics |
 
 Every document endpoint is scoped to the authenticated caller. A document
-belonging to another user returns `404`, not `403` — its existence is not
+belonging to another user returns `404`, not `403`  its existence is not
 confirmed either way.
 
 ### Reading a chat response
@@ -214,7 +214,7 @@ ones that change behaviour most:
 |---|---|---|
 | `ENVIRONMENT` | `development` | `production` enables startup checks that refuse unsafe config |
 | `SECRET_KEY` | placeholder | **Must** be changed for production; ≥32 chars |
-| `REQUIRE_AUTHENTICATION` | `true` | `false` opens every endpoint — local experiments only |
+| `REQUIRE_AUTHENTICATION` | `true` | `false` opens every endpoint  local experiments only |
 | `REQUIRE_REAL_EMBEDDINGS` | `false` | `true` fails startup rather than degrading to keyword search |
 | `RETAIN_SOURCE_FILES` | `true` | `false` where documents must not be kept at rest |
 | `SOURCE_RETENTION_DAYS` | `30` | How long retained originals live |
@@ -265,8 +265,8 @@ The single most important edge is that **one** `RetrievalService` is shared by
 document processing and chat. When each constructed its own, uploads went into
 one vector store and questions searched a different, empty one.
 
-Deeper detail — data model, request flow, failure modes and the list of
-modules that are present but not wired in — is in
+Deeper detail  data model, request flow, failure modes and the list of
+modules that are present but not wired in  is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
@@ -283,7 +283,7 @@ npm run type-check && npm run lint && npm run build
 ```
 
 CI runs all of the above plus a smoke job that boots the application and
-drives a document from upload through to a successful search — the check that
+drives a document from upload through to a successful search  the check that
 would have caught the import error which made the service unstartable.
 
 Contribution guidelines: [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -348,6 +348,6 @@ Known limitations are listed honestly in
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT  see [LICENSE](LICENSE).
 
 Built by [Aaron Sequeira](https://github.com/aaron-seq).
