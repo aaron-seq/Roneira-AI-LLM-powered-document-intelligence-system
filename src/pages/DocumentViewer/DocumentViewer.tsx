@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import {
     Download,
+    Description,
     DocumentScanner,
     PrivacyTip,
     WarningAmber,
@@ -106,21 +107,39 @@ const DocumentViewer = () => {
             .catch(() => undefined);
     }, [documentId]);
 
+    // Both downloads go through apiClient rather than a plain href or
+    // window.open: these endpoints require a bearer token, and a browser
+    // navigation sends no Authorization header, so the link would just 401.
+    const saveBlob = (data: BlobPart, filename: string) => {
+        const url = window.URL.createObjectURL(new Blob([data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+    };
+
     const handleDownload = async () => {
         try {
             const response = await apiClient.get(`/documents/${documentId}/source`, {
                 responseType: 'blob',
             });
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = documentData?.filename || String(documentId);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+            saveBlob(response.data, documentData?.filename || String(documentId));
         } catch {
             toast.error('The source file is no longer retained for this document.');
+        }
+    };
+
+    const handleExport = async () => {
+        try {
+            const response = await apiClient.get(`/documents/${documentId}/export`, {
+                responseType: 'blob',
+            });
+            saveBlob(response.data, `${documentData?.filename || documentId}.md`);
+        } catch {
+            toast.error('Could not export this document.');
         }
     };
 
@@ -245,6 +264,13 @@ const DocumentViewer = () => {
                     >
                         Original
                     </Button>
+                    <Button
+                        size="small"
+                        startIcon={<Description />}
+                        onClick={handleExport}
+                    >
+                        Export
+                    </Button>
                 </Stack>
 
                 {documentData.error && (
@@ -261,7 +287,7 @@ const DocumentViewer = () => {
                     >
                         Possible personal data found:{' '}
                         {Object.entries(pii.by_type)
-                            .map(([type, count]) => `${count}× ${type.toLowerCase().replace(/_/g, ' ')}`)
+                            .map(([type, count]) => `${count} x ${type.toLowerCase().replace(/_/g, ' ')}`)
                             .join(', ')}
                         . Detected by pattern matching, so treat it as a prompt to check, not a verdict.
                     </Alert>

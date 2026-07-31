@@ -24,7 +24,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 
 from backend.api.dependencies import get_document_processor, get_websocket_manager
 from backend.api.security import CurrentUser, get_current_user
@@ -38,6 +38,10 @@ from backend.models.responses import (
     DocumentUploadResponse,
 )
 from backend.services.document_comparison import compare_documents
+from backend.services.document_export import (
+    render_comparison_markdown,
+    render_markdown,
+)
 from backend.services.document_processor import DocumentProcessorService
 from backend.services.file_validation import (
     ALLOWED_EXTENSIONS,
@@ -176,9 +180,14 @@ async def get_document_status(
 async def compare(
     left: str = Query(description="Document ID of the baseline document"),
     right: str = Query(description="Document ID of the document to compare against"),
+    fmt: str = Query(
+        default="json",
+        pattern="^(json|markdown)$",
+        description="'markdown' returns a downloadable report instead of JSON",
+    ),
     user: CurrentUser = Depends(get_current_user),
     processor: DocumentProcessorService = Depends(get_document_processor),
-) -> DocumentComparisonResponse:
+):
     """Report what changed between two of the caller's documents.
 
     The answer is computed from the stored text of both documents, so it does
@@ -211,6 +220,15 @@ async def compare(
     result = compare_documents(
         documents["left"].extracted_text, documents["right"].extracted_text
     )
+    result["left_filename"] = documents["left"].filename
+    result["right_filename"] = documents["right"].filename
+
+    if fmt == "markdown":
+        return PlainTextResponse(
+            render_comparison_markdown(result),
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="comparison.md"'},
+        )
 
     return DocumentComparisonResponse(
         left_document_id=left,
@@ -246,6 +264,38 @@ async def get_document(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
     return DocumentDetailResponse(**document)
+
+
+@router.get(
+    "/{document_id}/export",
+    summary="Export a document's analysis as Markdown",
+    response_class=PlainTextResponse,
+)
+async def export_document(
+    document_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+) -> PlainTextResponse:
+    """Return the summary, extracted details and text as a Markdown file.
+
+    Personal data is reported as counts only, never as values — the same rule
+    the rest of the API follows. An export is the most likely thing to be
+    pasted into a ticket, which is the worst place for a card number.
+    """
+    document = await processor.get_document(document_id, owner_id=user.user_id)
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+
+    filename = os.path.basename(document.get("filename") or document_id)
+    return PlainTextResponse(
+        render_markdown(document),
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}.md"',
+        },
+    )
 
 
 @router.get(

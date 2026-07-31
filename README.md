@@ -202,7 +202,8 @@ Full interactive reference at `/api/docs`. The endpoints you will actually use:
 | `GET` | `/api/documents/{document_id}/status` | Processing progress |
 | `GET` | `/api/documents/{document_id}` | Extracted text, metadata and AI analysis |
 | `GET` | `/api/documents/{document_id}/source` | Download the original file |
-| `GET` | `/api/documents/compare?left=…&right=…` | What changed between two documents |
+| `GET` | `/api/documents/compare?left=…&right=…` | What changed between two documents (`&fmt=markdown` to download) |
+| `GET` | `/api/documents/{document_id}/export` | Summary, details and text as Markdown |
 | `DELETE` | `/api/documents/{document_id}` | Delete the document, its chunks and its vectors |
 | `POST` | `/api/search` | Semantic/keyword search with citations |
 | `POST` | `/api/chat` | Grounded question answering |
@@ -365,6 +366,11 @@ Ordered by how much each would improve the product for a real user.
   finished answer; wire it to Ollama's streaming endpoint.
 
 ### After that
+
+- **Collections and tags.** Blocked on something structural rather than
+  difficult: the schema is created with `create_all` and there is no
+  migrations directory, so a new column reaches a fresh database and never an
+  existing one. Adding Alembic is the prerequisite, not the tagging UI.
 
 - **PII detection on ingest.** `pii_detection_service.py` is written and
   unused. Flagging PII at upload, with the option to redact before indexing,

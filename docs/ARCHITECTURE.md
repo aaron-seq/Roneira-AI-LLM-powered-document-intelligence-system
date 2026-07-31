@@ -334,6 +334,7 @@ parallel mock of it.
 | `test_rag_grounding.py` | Page citations, context assembly, lexical fallback quality |
 | `test_document_comparison.py` | Paragraph diffing, page tracking, route ordering, ownership |
 | `test_document_insights.py` | Entities, PII flagging, and that no PII value is ever persisted |
+| `test_document_export.py` | Markdown rendering, and that an export never carries a PII value |
 | `test_api_contract.py` | Health honesty, correlation IDs, headers, metrics, OpenAPI |
 | `test_config.py` | Documented env vars work; production hardening refuses unsafe config |
 | `test_progress_reporting.py` | Websocket progress shape; structured-logger call signatures |
