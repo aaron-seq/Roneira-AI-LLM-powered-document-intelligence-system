@@ -157,6 +157,51 @@ class DocumentDeleteResponse(BaseModel):
     deleted: bool
 
 
+class DocumentChange(BaseModel):
+    """One difference between two documents.
+
+    Both sides are quoted verbatim, with the page each came from, so a change
+    can be checked against the originals the same way a citation can.
+    """
+
+    kind: str = Field(description="added, removed or changed")
+    left: List[str] = Field(
+        default_factory=list, description="Paragraphs in the first document"
+    )
+    right: List[str] = Field(
+        default_factory=list, description="Paragraphs in the second document"
+    )
+    left_page: Optional[int] = None
+    right_page: Optional[int] = None
+
+
+class DocumentComparisonResponse(BaseModel):
+    """Paragraph-level differences between two documents.
+
+    Derived entirely from the extracted text of both documents; no model is
+    involved, so this result does not degrade when the LLM is unavailable.
+    """
+
+    left_document_id: str
+    right_document_id: str
+    left_filename: Optional[str] = None
+    right_filename: Optional[str] = None
+    changes: List[DocumentChange] = Field(default_factory=list)
+    added: int = 0
+    removed: int = 0
+    changed: int = 0
+    unchanged_paragraphs: int = 0
+    left_paragraphs: int = 0
+    right_paragraphs: int = 0
+    similarity: float = Field(
+        default=1.0,
+        description="1.0 when the documents are paragraph-for-paragraph identical",
+    )
+    truncated: bool = Field(
+        default=False, description="True when more changes exist than were returned"
+    )
+
+
 # ------------------------------------------------------------------- auth
 
 

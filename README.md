@@ -202,6 +202,7 @@ Full interactive reference at `/api/docs`. The endpoints you will actually use:
 | `GET` | `/api/documents/{document_id}/status` | Processing progress |
 | `GET` | `/api/documents/{document_id}` | Extracted text, metadata and AI analysis |
 | `GET` | `/api/documents/{document_id}/source` | Download the original file |
+| `GET` | `/api/documents/compare?left=…&right=…` | What changed between two documents |
 | `DELETE` | `/api/documents/{document_id}` | Delete the document, its chunks and its vectors |
 | `POST` | `/api/search` | Semantic/keyword search with citations |
 | `POST` | `/api/chat` | Grounded question answering |
@@ -372,7 +373,6 @@ Ordered by how much each would improve the product for a real user.
   on cases the other handles.
 - **Reranking.** A cross-encoder over the top 20 candidates measurably
   improves citation precision.
-- **Document comparison.** "What changed between v1 and v2 of this contract."
 - **A real user store.** Registration, password reset, and roles backed by
   the database rather than a dict.
 

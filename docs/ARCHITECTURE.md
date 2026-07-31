@@ -142,6 +142,20 @@ mislead people.
 
 ---
 
+### Comparing two documents
+
+`GET /api/documents/compare` diffs the stored text of two documents the caller
+owns. Paragraphs are the unit: a line diff of reflowed text reports every line
+as changed when one word moved, and a word diff loses the context that makes a
+change legible. Whitespace is normalised first for the same reason.
+
+Each reported change quotes both sides and carries the page it is on, so it can
+be checked against the originals the way a citation can. Nothing here goes
+through the model, so this feature does not degrade when Ollama is absent and
+cannot report a change that is not in the text.
+
+---
+
 ## Data model
 
 | Table | Holds | Notes |
@@ -304,6 +318,7 @@ parallel mock of it.
 | `test_upload_validation.py` | Renamed binaries, oversize, empty, traversal |
 | `test_text_extraction.py` | Failures fail, and never become indexed content |
 | `test_rag_grounding.py` | Page citations, context assembly, lexical fallback quality |
+| `test_document_comparison.py` | Paragraph diffing, page tracking, route ordering, ownership |
 | `test_api_contract.py` | Health honesty, correlation IDs, headers, metrics, OpenAPI |
 | `test_config.py` | Documented env vars work; production hardening refuses unsafe config |
 | `test_progress_reporting.py` | Websocket progress shape; structured-logger call signatures |

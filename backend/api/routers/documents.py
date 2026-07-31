@@ -29,12 +29,15 @@ from fastapi.responses import FileResponse
 from backend.api.dependencies import get_document_processor, get_websocket_manager
 from backend.api.security import CurrentUser, get_current_user
 from backend.models.responses import (
+    DocumentChange,
+    DocumentComparisonResponse,
     DocumentDeleteResponse,
     DocumentDetailResponse,
     DocumentListResponse,
     DocumentStatusResponse,
     DocumentUploadResponse,
 )
+from backend.services.document_comparison import compare_documents
 from backend.services.document_processor import DocumentProcessorService
 from backend.services.file_validation import (
     ALLOWED_EXTENSIONS,
@@ -163,6 +166,67 @@ async def get_document_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
     return DocumentStatusResponse(**status_data)
+
+
+@router.get(
+    "/compare",
+    response_model=DocumentComparisonResponse,
+    summary="Compare two documents paragraph by paragraph",
+)
+async def compare(
+    left: str = Query(description="Document ID of the baseline document"),
+    right: str = Query(description="Document ID of the document to compare against"),
+    user: CurrentUser = Depends(get_current_user),
+    processor: DocumentProcessorService = Depends(get_document_processor),
+) -> DocumentComparisonResponse:
+    """Report what changed between two of the caller's documents.
+
+    The answer is computed from the stored text of both documents, so it does
+    not depend on the LLM and cannot invent a change that is not there.
+
+    Declared above ``/{document_id}`` deliberately: FastAPI matches routes in
+    order, so a literal path registered later would be swallowed by the
+    parameterised one and "compare" would be looked up as a document ID.
+    """
+    documents = {}
+    for side, document_id in (("left", left), ("right", right)):
+        # Ownership is enforced by passing owner_id, so one caller cannot
+        # diff another tenant's document — or learn that it exists.
+        document = await processor.repository.get(document_id, owner_id=user.user_id)
+        if document is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document not found: {document_id}",
+            )
+        if not (document.extracted_text or "").strip():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Document {document_id} has no extracted text to compare. "
+                    f"Its status is '{document.status}'."
+                ),
+            )
+        documents[side] = document
+
+    result = compare_documents(
+        documents["left"].extracted_text, documents["right"].extracted_text
+    )
+
+    return DocumentComparisonResponse(
+        left_document_id=left,
+        right_document_id=right,
+        left_filename=documents["left"].filename,
+        right_filename=documents["right"].filename,
+        changes=[DocumentChange(**change) for change in result["changes"]],
+        added=result["added"],
+        removed=result["removed"],
+        changed=result["changed"],
+        unchanged_paragraphs=result["unchanged_paragraphs"],
+        left_paragraphs=result["left_paragraphs"],
+        right_paragraphs=result["right_paragraphs"],
+        similarity=result["similarity"],
+        truncated=result["truncated"],
+    )
 
 
 @router.get(
