@@ -19,6 +19,8 @@ from backend.services.retrieval_service import (
     RetrievalService,
     _page_for_offset,
     _page_offsets,
+    _rank_hybrid,
+    _tokenise,
 )
 from backend.services.vector_store_service import SearchResult
 
@@ -147,6 +149,74 @@ class TestDegradedModeIsDeclared:
             assert "REQUIRE_REAL_EMBEDDINGS" in str(exc)
         else:
             assert service.is_real, "initialize() succeeded without a real model"
+
+
+class TestHybridRanking:
+    """Keyword rank must rescue the chunk holding the literal term asked for.
+
+    Vector search ranks by meaning, so a chunk *about* invoices can outrank the
+    one containing "INV-2025-1001". That is the case people notice, because an
+    identifier is exactly what they searched for.
+    """
+
+    @staticmethod
+    def _result(chunk_id, content, score):
+        return SearchResult(
+            chunk_id=chunk_id,
+            document_id="doc1",
+            content=content,
+            score=score,
+            metadata={},
+        )
+
+    def test_the_chunk_with_the_exact_identifier_is_promoted(self):
+        # Vector order puts the generic prose first; only the third chunk
+        # actually contains the identifier.
+        candidates = [
+            self._result("a", "This invoice covers professional services.", 0.71),
+            self._result("b", "Invoices are issued monthly to each client.", 0.70),
+            self._result("c", "Invoice INV-2025-1001 total 12480.00 USD.", 0.69),
+        ]
+
+        ranked = _rank_hybrid("what is INV-2025-1001", candidates)
+
+        assert ranked[0].chunk_id == "c"
+
+    def test_scores_are_left_alone(self):
+        """Reordering must not rewrite the similarity a citation reports."""
+        candidates = [
+            self._result("a", "Invoices are issued monthly.", 0.70),
+            self._result("b", "Invoice INV-2025-1001 total due.", 0.69),
+        ]
+
+        ranked = _rank_hybrid("INV-2025-1001", candidates)
+
+        assert {r.chunk_id: r.score for r in ranked} == {"a": 0.70, "b": 0.69}
+
+    def test_a_query_matching_no_candidate_keeps_vector_order(self):
+        candidates = [
+            self._result("a", "Revenue grew year over year.", 0.8),
+            self._result("b", "Headcount was unchanged.", 0.7),
+        ]
+
+        ranked = _rank_hybrid("zzz nonexistent term", candidates)
+
+        assert [r.chunk_id for r in ranked] == ["a", "b"]
+
+    def test_identifiers_survive_tokenisation(self):
+        """Splitting on '-' would make INV-2025-1001 match any invoice."""
+        assert "inv-2025-1001" in _tokenise("Invoice INV-2025-1001 issued")
+
+    def test_a_term_in_every_candidate_does_not_decide_the_order(self):
+        """A term with no discriminating power must not drive ranking."""
+        candidates = [
+            self._result("a", "invoice one", 0.9),
+            self._result("b", "invoice two", 0.8),
+        ]
+
+        ranked = _rank_hybrid("invoice", candidates)
+
+        assert [r.chunk_id for r in ranked] == ["a", "b"]
 
 
 class TestChatGrounding:

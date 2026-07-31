@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     #: Minimum similarity a chunk must reach before it is shown as a citation.
     retrieval_min_score: float = Field(default=0.15, ge=0.0, le=1.0)
 
+    #: Re-rank the vector candidates by combining semantic rank with keyword
+    #: overlap. Vector search alone is weak on exact tokens — invoice numbers,
+    #: surnames, product codes — where a topically similar chunk can outrank
+    #: the one containing the literal term the question asked for.
+    hybrid_retrieval: bool = Field(default=True)
+
     #: Refuse to start unless a real embedding model loads. Otherwise the
     #: service falls back to keyword-only lexical matching, which works but
     #: cannot match paraphrases — set this true where that is unacceptable.

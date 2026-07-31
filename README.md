@@ -259,6 +259,8 @@ ones that change behaviour most:
 | `SOURCE_RETENTION_DAYS` | `30` | How long retained originals live |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `1000` / `200` | Retrieval granularity |
 | `RETRIEVAL_MIN_SCORE` | `0.15` | Raise to cut weak citations, lower to widen recall |
+| `HYBRID_RETRIEVAL` | `true` | `false` ranks by meaning alone, ignoring keyword overlap |
+| `ENABLE_OCR` / `TESSERACT_PATH` | `true` / auto | Read scanned pages; point at the binary if it is not on `PATH` |
 | `DATABASE_URL` | SQLite | PostgreSQL is required for more than one worker |
 
 Setting `ENVIRONMENT=production` makes the service **refuse to start** with a

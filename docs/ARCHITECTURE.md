@@ -85,6 +85,28 @@ The vector store is a derived index that can be rebuilt; the citation metadata
 is the record of provenance. Keeping page numbers in the database means a
 citation still resolves to "page 7 of contract.pdf" after a re-index.
 
+### Ranking
+
+Retrieval over-fetches candidates and re-orders them before truncating to
+`top_k`. Vector similarity supplies one ordering; BM25 over the candidate pool
+supplies the other, and the two are combined as a weighted sum after
+normalising BM25 to `[0, 1]`.
+
+The reason is that vector search ranks by meaning, which is what makes
+paraphrased questions work and is exactly why it can rank a passage *about*
+invoices above the one containing `INV-2025-1001`. Keyword scoring has the
+opposite blind spot.
+
+Term rarity is measured *within the retrieved pool*, so no corpus-wide index
+has to be maintained across uploads and deletes. The consequence is that this
+improves precision but not recall: a chunk the vector search never returned
+cannot be recovered by re-ranking. A real BM25/FTS index over
+`document_chunks`, unioned with the vector hits, is the upgrade path.
+
+`SearchResult.score` keeps the vector similarity even after re-ranking, so
+`RETRIEVAL_MIN_SCORE` keeps its meaning and a citation still reports a
+comparable number. Set `HYBRID_RETRIEVAL=false` to rank on similarity alone.
+
 PDF extraction emits `--- Page N ---` markers, and
 `retrieval_service._page_for_offset` maps a chunk's character offset back to
 its page. That is the whole mechanism behind verifiable citations.
