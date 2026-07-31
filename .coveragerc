@@ -19,18 +19,7 @@ branch = False
 omit =
     backend/tests/*
     # --- Not imported by backend.main (verified, not assumed) ---
-    backend/common/utils.py
-    backend/services/advanced_rag.py
-    backend/services/azure_service.py
-    backend/services/cross_reference_service.py
-    backend/services/entity_extraction_service.py
     backend/services/feedback_service.py
-    backend/services/free_llm_service.py
-    backend/services/llm_providers/*
-    backend/services/pii_detection_service.py
-    backend/services/request_batching.py
-    backend/services/sse_stream.py
-    backend/services/summarization_service.py
     backend/training/*
     # Optional tracing shim; inert unless opentelemetry is installed.
     backend/observability/tracing.py

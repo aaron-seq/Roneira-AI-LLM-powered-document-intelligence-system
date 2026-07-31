@@ -66,7 +66,8 @@ POST /api/documents/upload
 background task
   │
   ├─ 10%  extract text ──────────► FAILED with a readable reason
-  ├─ 40%  LLM enrichment ────────► degrades: text is kept, summary skipped
+  ├─ 40%  analyse ───────────────► entities, PII flags and an extractive
+  │                                summary always; LLM prose when reachable
   ├─ 75%  chunk → embed → index ─► FAILED if indexing fails
   └─ 100% COMPLETED
 ```
@@ -247,28 +248,41 @@ wildcard CORS or hosts, or `DEBUG=true`.
 
 ## Unwired modules
 
-These exist in `backend/` and are **not imported by the running application**.
-They are kept because several are worth adopting, but nothing calls them
-today. Verified by walking the import graph from `backend.main`, not assumed:
+There used to be a long list here. Each entry was either adopted or removed,
+because a module nobody imports is a module nobody runs — and code that has
+never run is not a head start. Wiring the entity extractor immediately turned
+up a regex that could not match (`\b` after `%`, so "a 15% increase" never
+fired), which is the kind of defect unexecuted code accumulates silently.
 
-| Module | What it would provide |
+**Adopted** — now on the ingest path, with tests, and no longer excluded from
+the coverage gate:
+
+| Module | What it provides |
 |---|---|
-| `services/pii_detection_service.py` | PII detection and redaction on ingest |
-| `services/entity_extraction_service.py` | Structured entity extraction |
-| `services/summarization_service.py` | Multi-strategy summarization |
-| `services/cross_reference_service.py` | Links between documents |
-| `services/advanced_rag.py` | Hybrid search, reranking, query expansion |
-| `services/request_batching.py` | Batched LLM inference |
-| `services/sse_stream.py` | Server-sent events for streaming |
-| `services/llm_providers/*` | Multi-provider abstraction (Azure OpenAI, Ollama) |
-| `services/azure_service.py`, `free_llm_service.py` | Alternative backends |
-| `training/*` | Fine-tuning data preparation |
-| `common/utils.py` | Assorted helpers |
+| `services/entity_extraction_service.py` | Pattern-based entities on every document |
+| `services/pii_detection_service.py` | Personal data flagged at ingest |
+| `services/summarization_service.py` | Extractive summary when no LLM is reachable |
 
-They are excluded from the coverage gate in `.coveragerc` and from the
-stricter lint rules in `pyproject.toml`, both with comments pointing here.
-**Wiring one up means removing its entry from both files and bringing tests
-with it.**
+They are reached through `services/document_insights.py`, a thin adapter that
+exists for one specific reason: `PIIDetectionService.generate_report` embeds
+the matched text itself, and persisting that would write detected national
+insurance and card numbers into the database and hand them back over the API.
+The adapter reports types, counts and offsets, never values.
+
+**Removed** — recoverable from git history if ever wanted:
+
+| Module | Why |
+|---|---|
+| `services/advanced_rag.py` | Ranking is now native (see [Ranking](#ranking)); the rest was unbuilt speculation |
+| `services/llm_providers/*`, `azure_service.py`, `free_llm_service.py` | Cloud provider abstractions, against a local-first product that promises no data leaves the host |
+| `services/cross_reference_service.py` | Document graphing, never called, would have added scikit-learn to the request path |
+| `services/request_batching.py`, `sse_stream.py` | Never called; streaming is still simulated |
+| `services/free_ocr_service.py` | Superseded by `common/ocr.py`, which does not need opencv, PyMuPDF or EasyOCR |
+| `common/utils.py` | Twenty-three lines nothing imported |
+
+Still unwired, and honestly so: `services/feedback_service.py` (the feedback
+router talks to the repository directly) and `training/*`, which is offline
+tooling rather than application code.
 
 There is also a legacy `app/` tree (an older Azure-oriented implementation)
 and a `src/` tree of research and demo scripts. Neither is imported by
@@ -319,6 +333,7 @@ parallel mock of it.
 | `test_text_extraction.py` | Failures fail, and never become indexed content |
 | `test_rag_grounding.py` | Page citations, context assembly, lexical fallback quality |
 | `test_document_comparison.py` | Paragraph diffing, page tracking, route ordering, ownership |
+| `test_document_insights.py` | Entities, PII flagging, and that no PII value is ever persisted |
 | `test_api_contract.py` | Health honesty, correlation IDs, headers, metrics, OpenAPI |
 | `test_config.py` | Documented env vars work; production hardening refuses unsafe config |
 | `test_progress_reporting.py` | Websocket progress shape; structured-logger call signatures |

@@ -55,17 +55,10 @@ ignore = [
 "backend/common/helpers.py" = ["ASYNC230", "ASYNC240"]
 "backend/api/routers/documents.py" = ["ASYNC240"]
 
-# Unwired modules kept for future adoption; see .coveragerc and
-# docs/ARCHITECTURE.md. They are linted for syntax and imports, but not held
-# to the stricter bugbear/security rules until they are actually adopted.
-# Removing an entry here is part of wiring the module up.
+# Pre-existing findings in modules that predate the stricter rule set. These
+# are exemptions to pay down, not licence to write new code this way.
 "backend/observability/tracing.py" = ["B039"]
-"backend/services/advanced_rag.py" = ["B007", "B905", "E741"]
-"backend/services/azure_service.py" = ["ASYNC230"]
-"backend/services/free_llm_service.py" = ["RUF013"]
-"backend/services/llm_providers/*" = ["B904"]
 "backend/services/pii_detection_service.py" = ["B007"]
-"backend/services/request_batching.py" = ["RUF006", "S324"]
 "backend/services/text_splitter_service.py" = ["B007"]
 "backend/services/vector_store_service.py" = ["ASYNC240", "E402", "F401"]
 "backend/training/data_preparation.py" = ["S311", "S324"]
