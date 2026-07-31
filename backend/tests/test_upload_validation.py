@@ -8,6 +8,7 @@ into memory before checking its size, so a renamed binary was accepted as a
 from __future__ import annotations
 
 import io
+from types import SimpleNamespace
 
 import pytest
 
@@ -70,6 +71,43 @@ class TestContentDetection:
     )
     def test_detects_type_from_leading_bytes(self, head, extension, expected):
         assert detect_content_type(head, extension) == expected
+
+    def test_an_inconclusive_libmagic_answer_falls_back_to_signatures(self, monkeypatch):
+        """Detection must not depend on which host the service runs on.
+
+        libmagic ships on most Linux images and rarely on Windows. It returns
+        `application/octet-stream` for a file whose signature is recognisable
+        but whose body is truncated, so treating that as a verdict meant the
+        same upload was accepted on one host and 400'd on the other.
+        """
+        from backend.services import file_validation
+
+        monkeypatch.setattr(file_validation, "_MAGIC_AVAILABLE", True)
+        monkeypatch.setattr(
+            file_validation,
+            "_magic",
+            SimpleNamespace(from_buffer=lambda *a, **k: "application/octet-stream"),
+        )
+
+        assert detect_content_type(b"\x89PNG\r\n\x1a\n", ".png") == "image/png"
+        assert detect_content_type(b"%PDF-1.7\n...", ".pdf") == "application/pdf"
+
+    def test_a_specific_libmagic_answer_still_wins(self, monkeypatch):
+        """Falling back must not blunt the check that catches renamed files."""
+        from backend.services import file_validation
+
+        monkeypatch.setattr(file_validation, "_MAGIC_AVAILABLE", True)
+        monkeypatch.setattr(
+            file_validation,
+            "_magic",
+            SimpleNamespace(from_buffer=lambda *a, **k: "application/x-dosexec"),
+        )
+
+        # Executable bytes wearing a .pdf extension are still refused.
+        detected = detect_content_type(b"MZ\x90\x00", ".pdf")
+        assert detected == "application/x-dosexec"
+        with pytest.raises(FileValidationError, match="does not match"):
+            verify_content_matches_extension(detected, ".pdf")
 
     def test_matching_content_and_extension_is_accepted(self):
         verify_content_matches_extension("application/pdf", ".pdf")

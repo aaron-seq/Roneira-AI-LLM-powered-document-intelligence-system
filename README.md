@@ -39,9 +39,9 @@ Being clear about this saves you an evaluation:
 - The bundled `demo`/`admin` accounts are **development conveniences**, not a
   user management system. See [docs/SECURITY.md](docs/SECURITY.md) before
   putting real documents in it.
-- OCR for scanned images is not wired into the pipeline yet  a scan with no
-  text layer will be rejected with a clear message rather than silently
-  indexed as empty. See the [roadmap](#roadmap).
+- OCR reads scanned PDFs and image uploads, but it needs the tesseract binary
+  installed (see [below](#reading-scanned-documents)). Without it a scan is
+  refused with that reason rather than silently indexed as empty.
 
 ---
 
@@ -116,6 +116,41 @@ pip install sentence-transformers
 
 The first run downloads ~90MB. To make the service refuse to start rather than
 silently fall back, set `REQUIRE_REAL_EMBEDDINGS=true`.
+
+### Reading scanned documents
+
+Scanned PDFs and image uploads (`.png`, `.jpg`, `.tiff`) are read with OCR.
+The Python side installs with everything else; the OCR engine itself is a
+system package:
+
+```bash
+# macOS
+brew install tesseract
+# Debian / Ubuntu
+sudo apt-get install tesseract-ocr
+# Windows
+winget install UB-Mannheim.TesseractOCR
+```
+
+Then check it was found:
+
+```bash
+python -c "from backend.common.ocr import ocr_availability; print(ocr_availability())"
+# (True, 'tesseract 5.4.0')
+```
+
+If the binary is somewhere unusual, point `TESSERACT_PATH` at it. Set
+`ENABLE_OCR=false` to switch OCR off entirely.
+
+**What it does.** Only pages that have no text layer are OCR'd, so a normal
+PDF costs nothing extra and a half-scanned one only pays for the scanned
+pages. OCR'd pages keep their page markers, so they cite like any other page.
+The document records which pages were machine-read in `ocr_pages`.
+
+**What it does not do.** No deskewing, denoising or handwriting support, and
+at most 50 pages per document. A poor scan gives poor text — and because that
+text is what gets indexed and cited, check `ocr_pages` before trusting an
+answer drawn from one.
 
 ### Turning on summaries and chat
 
@@ -305,7 +340,8 @@ Failure modes that have actually happened here, and what each one means.
 | Chat answers say the model is not running | Ollama is not reachable | `ollama serve`, or accept degraded mode — extraction, indexing and search still work |
 | Every answer has `embeddings_are_real: false` | `sentence-transformers` is not installed, so search is keyword-only | `pip install sentence-transformers` |
 | Service refuses to start naming `SECRET_KEY`/`ALLOWED_HOSTS` | `ENVIRONMENT=production` with unsafe config | That check is deliberate — fix the config, do not set `ENVIRONMENT=development` |
-| A scanned PDF is rejected | It has no text layer and OCR is not wired in | Known gap — see the roadmap |
+| A scanned PDF is rejected naming OCR | The tesseract binary is not installed | See [Reading scanned documents](#reading-scanned-documents) |
+| A scan is indexed but the text is garbled | OCR quality is limited by the scan | Check `ocr_pages` on the document; there is no deskew/denoise pass |
 | Windows: `PermissionError: [WinError 32]` tearing down tests | ChromaDB holds `chroma.sqlite3` open; the temp dir cannot be unlinked | Already ignored in `conftest.py`; it is a teardown artefact, not a test failure |
 | Windows: Python crashes under Git Bash with `TP_NUM_C_BUFS too small` | A Cygwin/MSYS limitation, not a project bug | Run Python, `pytest` and `uvicorn` from PowerShell or `cmd` |
 | Frontend loads a different app on `localhost:3000` | Another process owns IPv6 `::1:3000`; Vite binds IPv4 | Use `http://127.0.0.1:3000`, or free the port |
@@ -318,9 +354,6 @@ Ordered by how much each would improve the product for a real user.
 
 ### Next
 
-- **OCR for scanned documents.** `free_ocr_service.py` exists but is not
-  wired in, so image-only PDFs are rejected. This is the single largest gap
-  between the promise and the behaviour.
 - **Table extraction.** `extract_tables` is accepted as an upload option and
   currently ignored; invoices and reports are mostly tables.
 - **Structured field extraction.** Pull invoice number, totals, dates and

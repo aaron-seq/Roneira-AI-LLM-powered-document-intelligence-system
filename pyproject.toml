@@ -63,7 +63,6 @@ ignore = [
 "backend/services/advanced_rag.py" = ["B007", "B905", "E741"]
 "backend/services/azure_service.py" = ["ASYNC230"]
 "backend/services/free_llm_service.py" = ["RUF013"]
-"backend/services/free_ocr_service.py" = ["ASYNC230", "B007"]
 "backend/services/llm_providers/*" = ["B904"]
 "backend/services/pii_detection_service.py" = ["B007"]
 "backend/services/request_batching.py" = ["RUF006", "S324"]

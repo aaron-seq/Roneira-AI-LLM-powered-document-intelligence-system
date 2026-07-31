@@ -17,6 +17,13 @@ from typing import Any, Dict, Tuple
 
 import aiofiles
 
+from backend.common.ocr import (
+    MIN_CHARS_FOR_TEXT_LAYER,
+    ocr_availability,
+    ocr_image_file,
+    ocr_pdf_pages,
+)
+
 try:
     import pdfplumber
 except ImportError:  # pragma: no cover - optional dependency
@@ -77,13 +84,7 @@ async def extract_text_from_file(file_path: str) -> Tuple[str, Dict[str, Any]]:
     elif file_extension in TEXT_EXTENSIONS:
         text, extra = await _extract_from_text(file_path)
     elif file_extension in IMAGE_EXTENSIONS:
-        # Rejecting is the honest outcome: indexing a placeholder would make
-        # the document appear searchable when it holds nothing.
-        raise TextExtractionError(
-            "This is an image and OCR is not enabled, so no text could be "
-            "read from it. Upload a PDF with a text layer, or wait for OCR "
-            "support (see the project roadmap)."
-        )
+        text, extra = await _extract_from_image(file_path)
     else:
         raise TextExtractionError(
             f"'{file_extension}' is not a supported document format."
@@ -128,7 +129,9 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
         )
 
     metadata: Dict[str, Any] = {"pages": 0, "word_count": 0}
-    page_texts = []
+    # Page number -> text, so pages without a text layer can be identified and
+    # re-read with OCR before the document is assembled.
+    pages: Dict[int, str] = {}
     failed_pages = []
 
     try:
@@ -137,7 +140,7 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
                 metadata["pages"] = len(pdf.pages)
                 for page_number, page in enumerate(pdf.pages, start=1):
                     try:
-                        page_text = page.extract_text() or ""
+                        pages[page_number] = page.extract_text() or ""
                     except Exception as exc:
                         # One unreadable page should not lose the other 99.
                         logger.warning(
@@ -147,15 +150,13 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
                             exc,
                         )
                         failed_pages.append(page_number)
-                        continue
-                    page_texts.append(f"--- Page {page_number} ---\n{page_text}")
         else:
             with open(file_path, "rb") as handle:
                 reader = PyPDF2.PdfReader(handle)
                 metadata["pages"] = len(reader.pages)
                 for page_number, page in enumerate(reader.pages, start=1):
                     try:
-                        page_text = page.extract_text() or ""
+                        pages[page_number] = page.extract_text() or ""
                     except Exception as exc:
                         logger.warning(
                             "Page %s of %s could not be read: %s",
@@ -164,8 +165,6 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
                             exc,
                         )
                         failed_pages.append(page_number)
-                        continue
-                    page_texts.append(f"--- Page {page_number} ---\n{page_text}")
 
     except TextExtractionError:
         raise
@@ -175,7 +174,36 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
             "password-protected."
         ) from exc
 
-    text = _normalise_whitespace("\n".join(page_texts))
+    # A page whose text layer is empty or near-empty is a scan. Read it with
+    # OCR rather than letting it contribute nothing, which previously made a
+    # scanned document either fail outright or index as blank.
+    scanned = [
+        number
+        for number, body in sorted(pages.items())
+        if len(body.strip()) < MIN_CHARS_FOR_TEXT_LAYER
+    ]
+    if scanned:
+        available, reason = ocr_availability()
+        if available:
+            recovered = await ocr_pdf_pages(file_path, scanned)
+            for page_number, page_text in recovered.items():
+                pages[page_number] = page_text
+            if recovered:
+                # Surfaced on the document so a reader knows which pages were
+                # machine-read rather than extracted, and can weigh them.
+                metadata["ocr_pages"] = sorted(recovered)
+                metadata["ocr_engine"] = reason
+        else:
+            metadata["ocr_unavailable_reason"] = reason
+            metadata["pages_without_text_layer"] = scanned
+
+    text = _normalise_whitespace(
+        "\n".join(
+            f"--- Page {number} ---\n{body}"
+            for number, body in sorted(pages.items())
+            if body.strip()
+        )
+    )
     metadata["word_count"] = len(text.split())
     if failed_pages:
         # Recorded on the document so a partial result is visible rather than
@@ -183,6 +211,37 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
         metadata["failed_pages"] = failed_pages
 
     return text, metadata
+
+
+async def _extract_from_image(file_path: str) -> Tuple[str, Dict[str, Any]]:
+    """Read text off an image with OCR.
+
+    When OCR is unavailable the upload is still refused, with the reason it is
+    unavailable rather than a blanket "not supported". Indexing a placeholder
+    would make the document appear searchable while holding nothing.
+    """
+    available, reason = ocr_availability()
+    if not available:
+        raise TextExtractionError(
+            f"This is an image, so it needs OCR to be read, and OCR is not "
+            f"available: {reason}"
+        )
+
+    text = await ocr_image_file(file_path)
+    if not text or not text.strip():
+        raise TextExtractionError(
+            "OCR ran on this image but found no readable text. It may be a "
+            "photo without writing, or too low-resolution to read."
+        )
+
+    # Page 1 marker keeps citations uniform with PDFs, so an image cites as
+    # "page 1" rather than as a special case everywhere downstream.
+    return f"--- Page 1 ---\n{text}", {
+        "pages": 1,
+        "word_count": len(text.split()),
+        "ocr_pages": [1],
+        "ocr_engine": reason,
+    }
 
 
 async def _extract_from_docx(file_path: str) -> Tuple[str, Dict[str, Any]]:

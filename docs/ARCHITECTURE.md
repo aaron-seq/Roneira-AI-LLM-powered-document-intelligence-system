@@ -148,6 +148,7 @@ The design principle: **degrade visibly, never silently**.
 | What fails | Behaviour | How you find out |
 |---|---|---|
 | No embedding model | Keyword-only lexical matching | `/api/health` → `degraded`; `embeddings_are_real: false` on every response; `roneira_embedding_backend_real` gauge = 0 |
+| tesseract missing | Scans and images are refused, naming the reason; text documents unaffected | The document's failure reason; `ocr_unavailable_reason` in metadata |
 | Ollama unreachable | Text still extracted and indexed; no summary or chat prose | `/api/health` → `degraded` with the endpoint it tried |
 | Database down | Requests fail | `/api/health/ready` → 503; liveness stays 200 so the container is not killed |
 | Text extraction fails | Document marked `failed` with a readable reason; nothing indexed | Document status; `roneira_documents_processed_total{status="error"}` |
@@ -216,7 +217,6 @@ today. Verified by walking the import graph from `backend.main`, not assumed:
 
 | Module | What it would provide |
 |---|---|
-| `services/free_ocr_service.py` | OCR for scanned documents — the largest capability gap |
 | `services/pii_detection_service.py` | PII detection and redaction on ingest |
 | `services/entity_extraction_service.py` | Structured entity extraction |
 | `services/summarization_service.py` | Multi-strategy summarization |
@@ -245,8 +245,11 @@ which is how production and development ended up as different applications.
 
 Stated plainly so nobody discovers them the hard way:
 
-- **No OCR.** Image-only PDFs and photos are rejected with an explanatory
-  message rather than indexed as empty.
+- **OCR needs a system binary.** Scanned PDFs and image uploads are read with
+  tesseract, which pip cannot install. Without it OCR reports itself
+  unavailable and scans are refused with that reason — they are never indexed
+  as empty. Accuracy is whatever tesseract gives on the page as scanned; there
+  is no deskewing or denoising pass.
 - **Tables are partially handled.** `.docx` table cells are extracted; PDF
   tables are flattened into text. `extract_tables` is accepted as an upload
   option and currently ignored.

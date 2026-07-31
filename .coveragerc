@@ -26,7 +26,6 @@ omit =
     backend/services/entity_extraction_service.py
     backend/services/feedback_service.py
     backend/services/free_llm_service.py
-    backend/services/free_ocr_service.py
     backend/services/llm_providers/*
     backend/services/pii_detection_service.py
     backend/services/request_batching.py

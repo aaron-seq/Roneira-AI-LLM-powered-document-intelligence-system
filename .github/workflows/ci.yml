@@ -71,6 +71,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
+      # OCR needs the tesseract binary, which pip cannot provide. Without it
+      # the scanned-document tests skip, and the feature would ship untested.
+      - name: Install tesseract
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
