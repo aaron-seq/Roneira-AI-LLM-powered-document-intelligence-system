@@ -58,6 +58,27 @@ class ValidationError(AppError):
         super().__init__(message, status.HTTP_400_BAD_REQUEST, details)
 
 
+class LLMUnavailableError(AppError):
+    """The language model could not be reached, or failed while generating.
+
+    Signalled out of band so callers can tell a real answer from a failure.
+    Returning an apology *string* instead made the two indistinguishable, and
+    chat consequently reported ``grounded: true`` for a message that was not an
+    answer at all.
+    """
+
+    def __init__(
+        self,
+        message: str = "The language model is unavailable.",
+        original_error: Optional[Exception] = None,
+    ):
+        super().__init__(
+            message,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            original_error=original_error,
+        )
+
+
 class ProcessingError(AppError):
     def __init__(self, message: str, original_error: Optional[Exception] = None):
         super().__init__(

@@ -6,6 +6,7 @@ vector search, and result ranking for RAG applications.
 """
 
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -93,6 +94,7 @@ class RetrievalService:
             chunk_overlap if chunk_overlap is not None else settings.chunk_overlap
         )
         self.min_score = settings.retrieval_min_score
+        self.hybrid_enabled = settings.hybrid_retrieval
 
         self.text_splitter = TextSplitterService(
             default_chunk_size=self.chunk_size,
@@ -306,18 +308,19 @@ class RetrievalService:
 
         query_embedding = await self.embedding_service.embed_text(query)
 
-        # Over-fetch so post-filtering by score/ownership can still return
-        # top_k results instead of silently returning fewer.
-        fetch_k = top_k if (owner_id is None and document_ids is None) else top_k * 4
+        # Always over-fetch. Post-filtering by score and ownership would
+        # otherwise return fewer than top_k, and hybrid ranking needs a pool of
+        # candidates to reorder rather than the final list.
+        fetch_k = max(top_k * CANDIDATE_MULTIPLIER, top_k)
 
         results = await self.vector_store.search(
             query_embedding=query_embedding.embedding,
-            top_k=max(fetch_k, top_k),
+            top_k=fetch_k,
             filter_dict=filter_dict,
         )
 
         allowed = set(document_ids) if document_ids is not None else None
-        filtered_results: List[SearchResult] = []
+        candidates: List[SearchResult] = []
         for result in results:
             if result.score < threshold:
                 continue
@@ -329,9 +332,12 @@ class RetrievalService:
                 # document_ids allow-list is the authoritative check for those.
                 if chunk_owner is not None and chunk_owner != owner_id:
                     continue
-            filtered_results.append(result)
-            if len(filtered_results) >= top_k:
-                break
+            candidates.append(result)
+
+        if self.hybrid_enabled:
+            candidates = _rank_hybrid(query, candidates)
+
+        filtered_results = candidates[:top_k]
 
         combined_context = self._combine_context(filtered_results, max_context_length)
 
@@ -466,6 +472,113 @@ class RetrievalService:
 # --------------------------------------------------------------------------
 
 _PAGE_MARKER = re.compile(r"^--- Page (\d+) ---$", re.MULTILINE)
+
+
+# --------------------------------------------------------------------------
+# Hybrid ranking
+#
+# Vector search retrieves by meaning, which is what makes paraphrased
+# questions work — and is exactly why it can rank a chunk *about* invoices
+# above the chunk containing "INV-2025-1001". Keyword scoring has the opposite
+# failure. Combining the two orderings fixes each one's blind spot.
+#
+# The lexical score is BM25 computed over the retrieved candidates, so term
+# rarity is measured within the pool rather than against a corpus-wide index
+# that would have to be built at startup and kept in step with every upload
+# and delete.
+#
+# The two signals are combined as a weighted sum after normalising BM25 to
+# [0, 1]. Reciprocal Rank Fusion is the usual choice and needs no calibration,
+# but it is tuned for fusing long ranked lists: over a pool of twenty its
+# damping constant flattens rank differences until the two orderings almost
+# cancel, and the chunk holding the exact identifier stays where it was. A
+# weighted sum over normalised scores is predictable and directly tunable.
+#
+# ponytail: reorders the vector candidate pool, so it improves *precision* but
+# not recall — a chunk vector search never returned cannot be recovered here.
+# For that, build a real BM25/FTS index over document_chunks and union the two
+# result sets.
+# --------------------------------------------------------------------------
+
+#: How many candidates to pull per requested result before ranking.
+CANDIDATE_MULTIPLIER = 4
+
+#: BM25 parameters. Standard defaults; the corpus here is a handful of chunks,
+#: so tuning them is not where the wins are.
+_BM25_K1 = 1.5
+_BM25_B = 0.75
+
+#: Weight given to keyword match. At 0.5 an exact-identifier hit reliably
+#: overtakes a slightly more similar chunk that lacks the term, while a chunk
+#: matching only common words cannot displace a strong semantic match — those
+#: terms get an IDF of zero within the pool.
+_LEXICAL_WEIGHT = 0.5
+
+_TOKEN = re.compile(r"[a-z0-9]+(?:[-_./][a-z0-9]+)*")
+
+
+def _tokenise(text: str) -> List[str]:
+    """Lower-case word tokens, keeping identifiers like INV-2025-1001 whole."""
+    return _TOKEN.findall(text.lower())
+
+
+def _bm25_scores(query: str, documents: List[List[str]]) -> List[float]:
+    """BM25 of ``query`` against each token list, scored within this pool."""
+    if not documents:
+        return []
+
+    query_terms = set(_tokenise(query))
+    if not query_terms:
+        return [0.0] * len(documents)
+
+    lengths = [len(tokens) for tokens in documents]
+    average_length = sum(lengths) / len(lengths) or 1.0
+    total = len(documents)
+
+    scores = [0.0] * len(documents)
+    for term in query_terms:
+        containing = sum(1 for tokens in documents if term in tokens)
+        if containing == 0:
+            continue
+        # Robertson/Sparck Jones IDF, floored at zero so a term present in
+        # every candidate contributes nothing rather than going negative.
+        idf = max(0.0, math.log(1 + (total - containing + 0.5) / (containing + 0.5)))
+        for index, tokens in enumerate(documents):
+            frequency = tokens.count(term)
+            if not frequency:
+                continue
+            norm = 1 - _BM25_B + _BM25_B * (lengths[index] / average_length)
+            scores[index] += idf * (
+                frequency * (_BM25_K1 + 1) / (frequency + _BM25_K1 * norm)
+            )
+    return scores
+
+
+def _rank_hybrid(query: str, candidates: List[SearchResult]) -> List[SearchResult]:
+    """Reorder candidates by fusing semantic rank with keyword rank.
+
+    ``SearchResult.score`` is left untouched: it remains the vector similarity,
+    so ``RETRIEVAL_MIN_SCORE`` keeps its meaning and a citation still reports a
+    comparable number. Only the ordering changes.
+    """
+    if len(candidates) < 2:
+        return candidates
+
+    lexical = _bm25_scores(query, [_tokenise(c.content) for c in candidates])
+    best = max(lexical, default=0.0)
+    if best <= 0.0:
+        # No query term discriminates between these candidates; keyword
+        # ranking has no opinion, so leave the semantic order alone.
+        return candidates
+
+    combined = [
+        (1 - _LEXICAL_WEIGHT) * candidate.score + _LEXICAL_WEIGHT * (score / best)
+        for candidate, score in zip(candidates, lexical, strict=True)
+    ]
+
+    # sorted() is stable, so equal combined scores keep vector order.
+    order = sorted(range(len(candidates)), key=lambda i: combined[i], reverse=True)
+    return [candidates[i] for i in order]
 
 
 def _strip_page_markers(text: str) -> str:

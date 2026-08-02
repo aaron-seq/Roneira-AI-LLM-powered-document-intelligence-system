@@ -66,7 +66,8 @@ POST /api/documents/upload
 background task
   │
   ├─ 10%  extract text ──────────► FAILED with a readable reason
-  ├─ 40%  LLM enrichment ────────► degrades: text is kept, summary skipped
+  ├─ 40%  analyse ───────────────► entities, PII flags and an extractive
+  │                                summary always; LLM prose when reachable
   ├─ 75%  chunk → embed → index ─► FAILED if indexing fails
   └─ 100% COMPLETED
 ```
@@ -84,6 +85,28 @@ Chunks are stored twice, on purpose:
 The vector store is a derived index that can be rebuilt; the citation metadata
 is the record of provenance. Keeping page numbers in the database means a
 citation still resolves to "page 7 of contract.pdf" after a re-index.
+
+### Ranking
+
+Retrieval over-fetches candidates and re-orders them before truncating to
+`top_k`. Vector similarity supplies one ordering; BM25 over the candidate pool
+supplies the other, and the two are combined as a weighted sum after
+normalising BM25 to `[0, 1]`.
+
+The reason is that vector search ranks by meaning, which is what makes
+paraphrased questions work and is exactly why it can rank a passage *about*
+invoices above the one containing `INV-2025-1001`. Keyword scoring has the
+opposite blind spot.
+
+Term rarity is measured *within the retrieved pool*, so no corpus-wide index
+has to be maintained across uploads and deletes. The consequence is that this
+improves precision but not recall: a chunk the vector search never returned
+cannot be recovered by re-ranking. A real BM25/FTS index over
+`document_chunks`, unioned with the vector hits, is the upgrade path.
+
+`SearchResult.score` keeps the vector similarity even after re-ranking, so
+`RETRIEVAL_MIN_SCORE` keeps its meaning and a citation still reports a
+comparable number. Set `HYBRID_RETRIEVAL=false` to rank on similarity alone.
 
 PDF extraction emits `--- Page N ---` markers, and
 `retrieval_service._page_for_offset` maps a chunk's character offset back to
@@ -105,10 +128,32 @@ Retrieval is restricted to documents the caller owns. Without that filter a
 user could ask questions whose answers are drawn from another tenant's files —
 the retrieval layer would happily supply them.
 
+`grounded` means *the answer text was built from the retrieved passages* — not
+merely that retrieval returned something. If generation fails there is no
+answer to ground, so `grounded` is false even though sources are present. The
+LLM service signals failure by raising `LLMUnavailableError` rather than
+returning an apology string; when both were plain strings the two were
+indistinguishable, and a "model is unavailable" notice was shipped as a
+`grounded: true` answer with a full citation list beside it.
+
 If nothing clears the threshold, the response sets `grounded: false` **and**
 prepends a sentence saying the answer is not supported by the documents. An
 ungrounded answer that looks identical to a grounded one is how RAG products
 mislead people.
+
+---
+
+### Comparing two documents
+
+`GET /api/documents/compare` diffs the stored text of two documents the caller
+owns. Paragraphs are the unit: a line diff of reflowed text reports every line
+as changed when one word moved, and a word diff loses the context that makes a
+change legible. Whitespace is normalised first for the same reason.
+
+Each reported change quotes both sides and carries the page it is on, so it can
+be checked against the originals the way a citation can. Nothing here goes
+through the model, so this feature does not degrade when Ollama is absent and
+cannot report a change that is not in the text.
 
 ---
 
@@ -140,10 +185,12 @@ The design principle: **degrade visibly, never silently**.
 | What fails | Behaviour | How you find out |
 |---|---|---|
 | No embedding model | Keyword-only lexical matching | `/api/health` → `degraded`; `embeddings_are_real: false` on every response; `roneira_embedding_backend_real` gauge = 0 |
+| tesseract missing | Scans and images are refused, naming the reason; text documents unaffected | The document's failure reason; `ocr_unavailable_reason` in metadata |
 | Ollama unreachable | Text still extracted and indexed; no summary or chat prose | `/api/health` → `degraded` with the endpoint it tried |
 | Database down | Requests fail | `/api/health/ready` → 503; liveness stays 200 so the container is not killed |
 | Text extraction fails | Document marked `failed` with a readable reason; nothing indexed | Document status; `roneira_documents_processed_total{status="error"}` |
 | Retrieval matches nothing | Answer says so; `grounded: false` | `roneira_retrieval_queries_total{outcome="empty"}` |
+| LLM unreachable *during* a chat | `grounded: false`, the retrieved passages are still returned as sources so they can be read directly | `/api/health` → `degraded`; the answer text says the model is not running |
 | Indexing fails | Document marked `failed`, not `completed` | Document status |
 
 The lexical fallback deserves emphasis. When `sentence-transformers` is not
@@ -201,29 +248,41 @@ wildcard CORS or hosts, or `DEBUG=true`.
 
 ## Unwired modules
 
-These exist in `backend/` and are **not imported by the running application**.
-They are kept because several are worth adopting, but nothing calls them
-today. Verified by walking the import graph from `backend.main`, not assumed:
+There used to be a long list here. Each entry was either adopted or removed,
+because a module nobody imports is a module nobody runs — and code that has
+never run is not a head start. Wiring the entity extractor immediately turned
+up a regex that could not match (`\b` after `%`, so "a 15% increase" never
+fired), which is the kind of defect unexecuted code accumulates silently.
 
-| Module | What it would provide |
+**Adopted** — now on the ingest path, with tests, and no longer excluded from
+the coverage gate:
+
+| Module | What it provides |
 |---|---|
-| `services/free_ocr_service.py` | OCR for scanned documents — the largest capability gap |
-| `services/pii_detection_service.py` | PII detection and redaction on ingest |
-| `services/entity_extraction_service.py` | Structured entity extraction |
-| `services/summarization_service.py` | Multi-strategy summarization |
-| `services/cross_reference_service.py` | Links between documents |
-| `services/advanced_rag.py` | Hybrid search, reranking, query expansion |
-| `services/request_batching.py` | Batched LLM inference |
-| `services/sse_stream.py` | Server-sent events for streaming |
-| `services/llm_providers/*` | Multi-provider abstraction (Azure OpenAI, Ollama) |
-| `services/azure_service.py`, `free_llm_service.py` | Alternative backends |
-| `training/*` | Fine-tuning data preparation |
-| `common/utils.py` | Assorted helpers |
+| `services/entity_extraction_service.py` | Pattern-based entities on every document |
+| `services/pii_detection_service.py` | Personal data flagged at ingest |
+| `services/summarization_service.py` | Extractive summary when no LLM is reachable |
 
-They are excluded from the coverage gate in `.coveragerc` and from the
-stricter lint rules in `pyproject.toml`, both with comments pointing here.
-**Wiring one up means removing its entry from both files and bringing tests
-with it.**
+They are reached through `services/document_insights.py`, a thin adapter that
+exists for one specific reason: `PIIDetectionService.generate_report` embeds
+the matched text itself, and persisting that would write detected national
+insurance and card numbers into the database and hand them back over the API.
+The adapter reports types, counts and offsets, never values.
+
+**Removed** — recoverable from git history if ever wanted:
+
+| Module | Why |
+|---|---|
+| `services/advanced_rag.py` | Ranking is now native (see [Ranking](#ranking)); the rest was unbuilt speculation |
+| `services/llm_providers/*`, `azure_service.py`, `free_llm_service.py` | Cloud provider abstractions, against a local-first product that promises no data leaves the host |
+| `services/cross_reference_service.py` | Document graphing, never called, would have added scikit-learn to the request path |
+| `services/request_batching.py`, `sse_stream.py` | Never called; streaming is still simulated |
+| `services/free_ocr_service.py` | Superseded by `common/ocr.py`, which does not need opencv, PyMuPDF or EasyOCR |
+| `common/utils.py` | Twenty-three lines nothing imported |
+
+Still unwired, and honestly so: `services/feedback_service.py` (the feedback
+router talks to the repository directly) and `training/*`, which is offline
+tooling rather than application code.
 
 There is also a legacy `app/` tree (an older Azure-oriented implementation)
 and a `src/` tree of research and demo scripts. Neither is imported by
@@ -236,8 +295,11 @@ which is how production and development ended up as different applications.
 
 Stated plainly so nobody discovers them the hard way:
 
-- **No OCR.** Image-only PDFs and photos are rejected with an explanatory
-  message rather than indexed as empty.
+- **OCR needs a system binary.** Scanned PDFs and image uploads are read with
+  tesseract, which pip cannot install. Without it OCR reports itself
+  unavailable and scans are refused with that reason — they are never indexed
+  as empty. Accuracy is whatever tesseract gives on the page as scanned; there
+  is no deskewing or denoising pass.
 - **Tables are partially handled.** `.docx` table cells are extracted; PDF
   tables are flattened into text. `extract_tables` is accepted as an upload
   option and currently ignored.
@@ -270,6 +332,9 @@ parallel mock of it.
 | `test_upload_validation.py` | Renamed binaries, oversize, empty, traversal |
 | `test_text_extraction.py` | Failures fail, and never become indexed content |
 | `test_rag_grounding.py` | Page citations, context assembly, lexical fallback quality |
+| `test_document_comparison.py` | Paragraph diffing, page tracking, route ordering, ownership |
+| `test_document_insights.py` | Entities, PII flagging, and that no PII value is ever persisted |
+| `test_document_export.py` | Markdown rendering, and that an export never carries a PII value |
 | `test_api_contract.py` | Health honesty, correlation IDs, headers, metrics, OpenAPI |
 | `test_config.py` | Documented env vars work; production hardening refuses unsafe config |
 | `test_progress_reporting.py` | Websocket progress shape; structured-logger call signatures |

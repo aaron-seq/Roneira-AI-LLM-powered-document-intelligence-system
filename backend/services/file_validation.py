@@ -117,11 +117,28 @@ def validate_filename(filename: Optional[str]) -> str:
     return extension
 
 
+#: libmagic answers that carry no information. Treating these as a verdict
+#: made uploads host-dependent: libmagic is present on Linux and usually absent
+#: on Windows, so a file whose signature is recognisable but whose body is
+#: truncated was accepted on one host and rejected with 400 on the other.
+#: Fall through to the signature table instead of trusting a shrug.
+INCONCLUSIVE_TYPES = frozenset(
+    {"application/octet-stream", "application/x-empty", "inode/x-empty", "binary"}
+)
+
+
 def detect_content_type(head: bytes, extension: str) -> str:
-    """Best-effort MIME detection from the first bytes of a file."""
+    """Best-effort MIME detection from the first bytes of a file.
+
+    libmagic wins when it identifies something specific — that is what catches
+    a renamed executable. When it cannot tell, the signature table decides, so
+    the same bytes are classified the same way on every host.
+    """
     if _MAGIC_AVAILABLE:  # pragma: no cover - host dependent
         try:
-            return _magic.from_buffer(head, mime=True)
+            detected = _magic.from_buffer(head, mime=True)
+            if detected and detected not in INCONCLUSIVE_TYPES:
+                return detected
         except Exception as exc:
             logger.debug("libmagic detection failed, using signatures: %s", exc)
 

@@ -39,9 +39,9 @@ Being clear about this saves you an evaluation:
 - The bundled `demo`/`admin` accounts are **development conveniences**, not a
   user management system. See [docs/SECURITY.md](docs/SECURITY.md) before
   putting real documents in it.
-- OCR for scanned images is not wired into the pipeline yet  a scan with no
-  text layer will be rejected with a clear message rather than silently
-  indexed as empty. See the [roadmap](#roadmap).
+- OCR reads scanned PDFs and image uploads, but it needs the tesseract binary
+  installed (see [below](#reading-scanned-documents)). Without it a scan is
+  refused with that reason rather than silently indexed as empty.
 
 ---
 
@@ -117,6 +117,41 @@ pip install sentence-transformers
 The first run downloads ~90MB. To make the service refuse to start rather than
 silently fall back, set `REQUIRE_REAL_EMBEDDINGS=true`.
 
+### Reading scanned documents
+
+Scanned PDFs and image uploads (`.png`, `.jpg`, `.tiff`) are read with OCR.
+The Python side installs with everything else; the OCR engine itself is a
+system package:
+
+```bash
+# macOS
+brew install tesseract
+# Debian / Ubuntu
+sudo apt-get install tesseract-ocr
+# Windows
+winget install UB-Mannheim.TesseractOCR
+```
+
+Then check it was found:
+
+```bash
+python -c "from backend.common.ocr import ocr_availability; print(ocr_availability())"
+# (True, 'tesseract 5.4.0')
+```
+
+If the binary is somewhere unusual, point `TESSERACT_PATH` at it. Set
+`ENABLE_OCR=false` to switch OCR off entirely.
+
+**What it does.** Only pages that have no text layer are OCR'd, so a normal
+PDF costs nothing extra and a half-scanned one only pays for the scanned
+pages. OCR'd pages keep their page markers, so they cite like any other page.
+The document records which pages were machine-read in `ocr_pages`.
+
+**What it does not do.** No deskewing, denoising or handwriting support, and
+at most 50 pages per document. A poor scan gives poor text — and because that
+text is what gets indexed and cited, check `ocr_pages` before trusting an
+answer drawn from one.
+
 ### Turning on summaries and chat
 
 ```bash
@@ -167,6 +202,8 @@ Full interactive reference at `/api/docs`. The endpoints you will actually use:
 | `GET` | `/api/documents/{document_id}/status` | Processing progress |
 | `GET` | `/api/documents/{document_id}` | Extracted text, metadata and AI analysis |
 | `GET` | `/api/documents/{document_id}/source` | Download the original file |
+| `GET` | `/api/documents/compare?left=…&right=…` | What changed between two documents (`&fmt=markdown` to download) |
+| `GET` | `/api/documents/{document_id}/export` | Summary, details and text as Markdown |
 | `DELETE` | `/api/documents/{document_id}` | Delete the document, its chunks and its vectors |
 | `POST` | `/api/search` | Semantic/keyword search with citations |
 | `POST` | `/api/chat` | Grounded question answering |
@@ -185,7 +222,7 @@ confirmed either way.
 {
   "message": "The invoice total is $12,480.00, billed to Contoso Ltd.",
   "session_id": "5f2a…",
-  "grounded": true,              // built from retrieved passages, not model memory
+  "grounded": true,              // the answer text was built from the passages below
   "embeddings_are_real": true,   // false means keyword-only matching
   "sources": [
     {
@@ -200,7 +237,11 @@ confirmed either way.
 }
 ```
 
-`grounded: false` means the answer is **not** supported by your documents.
+`grounded: false` means the answer is **not** supported by your documents —
+either retrieval found nothing above the threshold, or the language model was
+unavailable so no answer could be composed at all. In the second case the
+retrieved passages are still returned in `sources`, so you can read them
+yourself; they are simply not presented as a cited answer.
 
 ---
 
@@ -220,6 +261,8 @@ ones that change behaviour most:
 | `SOURCE_RETENTION_DAYS` | `30` | How long retained originals live |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `1000` / `200` | Retrieval granularity |
 | `RETRIEVAL_MIN_SCORE` | `0.15` | Raise to cut weak citations, lower to widen recall |
+| `HYBRID_RETRIEVAL` | `true` | `false` ranks by meaning alone, ignoring keyword overlap |
+| `ENABLE_OCR` / `TESSERACT_PATH` | `true` / auto | Read scanned pages; point at the binary if it is not on `PATH` |
 | `DATABASE_URL` | SQLite | PostgreSQL is required for more than one worker |
 
 Setting `ENVIRONMENT=production` makes the service **refuse to start** with a
@@ -274,7 +317,7 @@ modules that are present but not wired in  is in
 ## Development
 
 ```bash
-pytest                              # 181 tests, 70% coverage gate
+pytest                              # 183 tests, 70% coverage gate
 pytest backend/tests/test_auth.py   # one file
 ruff check backend/ && ruff format backend/
 mypy backend/core backend/api backend/repositories --ignore-missing-imports
@@ -290,15 +333,31 @@ Contribution guidelines: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
+## Troubleshooting
+
+Failure modes that have actually happened here, and what each one means.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'backend'` from `pytest` | The repository root is not on `sys.path`. `python -m pytest` adds it, a bare `pytest` does not | `pytest.ini` sets `pythonpath = .`; if you removed it, run `python -m pytest` |
+| `ruff check` fails with `Unknown rule selector: ASYNC240` | Your ruff is older than the pinned one | `pip install -r requirements.txt` (ruff is pinned there) |
+| Chat answers say the model is not running | Ollama is not reachable | `ollama serve`, or accept degraded mode — extraction, indexing and search still work |
+| Every answer has `embeddings_are_real: false` | `sentence-transformers` is not installed, so search is keyword-only | `pip install sentence-transformers` |
+| Service refuses to start naming `SECRET_KEY`/`ALLOWED_HOSTS` | `ENVIRONMENT=production` with unsafe config | That check is deliberate — fix the config, do not set `ENVIRONMENT=development` |
+| A scanned PDF is rejected naming OCR | The tesseract binary is not installed | See [Reading scanned documents](#reading-scanned-documents) |
+| A scan is indexed but the text is garbled | OCR quality is limited by the scan | Check `ocr_pages` on the document; there is no deskew/denoise pass |
+| Windows: `PermissionError: [WinError 32]` tearing down tests | ChromaDB holds `chroma.sqlite3` open; the temp dir cannot be unlinked | Already ignored in `conftest.py`; it is a teardown artefact, not a test failure |
+| Windows: Python crashes under Git Bash with `TP_NUM_C_BUFS too small` | A Cygwin/MSYS limitation, not a project bug | Run Python, `pytest` and `uvicorn` from PowerShell or `cmd` |
+| Frontend loads a different app on `localhost:3000` | Another process owns IPv6 `::1:3000`; Vite binds IPv4 | Use `http://127.0.0.1:3000`, or free the port |
+
+---
+
 ## Roadmap
 
 Ordered by how much each would improve the product for a real user.
 
 ### Next
 
-- **OCR for scanned documents.** `free_ocr_service.py` exists but is not
-  wired in, so image-only PDFs are rejected. This is the single largest gap
-  between the promise and the behaviour.
 - **Table extraction.** `extract_tables` is accepted as an upload option and
   currently ignored; invoices and reports are mostly tables.
 - **Structured field extraction.** Pull invoice number, totals, dates and
@@ -308,6 +367,11 @@ Ordered by how much each would improve the product for a real user.
 
 ### After that
 
+- **Collections and tags.** Blocked on something structural rather than
+  difficult: the schema is created with `create_all` and there is no
+  migrations directory, so a new column reaches a fresh database and never an
+  existing one. Adding Alembic is the prerequisite, not the tagging UI.
+
 - **PII detection on ingest.** `pii_detection_service.py` is written and
   unused. Flagging PII at upload, with the option to redact before indexing,
   is what makes this deployable in regulated settings.
@@ -315,7 +379,6 @@ Ordered by how much each would improve the product for a real user.
   on cases the other handles.
 - **Reranking.** A cross-encoder over the top 20 candidates measurably
   improves citation precision.
-- **Document comparison.** "What changed between v1 and v2 of this contract."
 - **A real user store.** Registration, password reset, and roles backed by
   the database rather than a dict.
 

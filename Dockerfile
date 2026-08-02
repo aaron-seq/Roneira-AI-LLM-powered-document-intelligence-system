@@ -35,9 +35,11 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PATH="/opt/venv/bin:$PATH"
 
-# curl for the healthcheck; libmagic for content-type sniffing on upload.
+# curl for the healthcheck; libmagic for content-type sniffing on upload;
+# tesseract for OCR — it is a system package, so without it scanned documents
+# would be refused inside the container while working on the host.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl libmagic1 \
+        curl libmagic1 tesseract-ocr \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

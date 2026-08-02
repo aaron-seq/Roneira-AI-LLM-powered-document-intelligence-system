@@ -106,7 +106,10 @@ class PatternEntityExtractor:
             EntityType.URL: r'https?://[^\s<>"{}|\\^`\[\]]+',
             EntityType.DATE: r"\b(?:\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{4}[-/]\d{1,2}[-/]\d{1,2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4})\b",
             EntityType.MONEY: r"[\$€£¥]\s*\d+(?:,\d{3})*(?:\.\d{2})?|\d+(?:,\d{3})*(?:\.\d{2})?\s*(?:USD|EUR|GBP|dollars?|euros?)",
-            EntityType.PERCENT: r"\b\d+(?:\.\d+)?%\b",
+            # No trailing \b: '%' is a non-word character, so \b after it only
+            # matches when a word character follows. "a 15% increase" therefore
+            # never matched — the pattern only fired on things like "15%off".
+            EntityType.PERCENT: r"\b\d+(?:\.\d+)?%",
         }
 
     def extract(self, text: str) -> List[Entity]:

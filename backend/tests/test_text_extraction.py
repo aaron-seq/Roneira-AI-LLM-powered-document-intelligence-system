@@ -14,6 +14,38 @@ import time
 import pytest
 
 from backend.common.helpers import TextExtractionError, extract_text_from_file
+from backend.common.ocr import ocr_availability, ocr_is_available
+
+#: OCR needs the tesseract *binary*, which is a system package. Where it is
+#: absent these tests skip rather than fail — but CI installs it, so the
+#: scanned-document path is genuinely exercised there.
+requires_ocr = pytest.mark.skipif(
+    not ocr_is_available(),
+    reason=f"tesseract is not available: {ocr_availability()[1]}",
+)
+
+
+def _render_scan(lines, size=(1600, 700)):
+    """Build a page image the way a scanner would: black text, no text layer."""
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", size, "white")
+    y = 60
+    for line in lines:
+        # The default PIL font is small; draw then upscale so tesseract sees
+        # glyphs at a realistic size.
+        strip = Image.new("RGB", (900, 40), "white")
+        ImageDraw.Draw(strip).text((5, 10), line, fill="black")
+        image.paste(strip.resize((1400, 62)), (80, y))
+        y += 110
+    return image
+
+
+SCAN_LINES = [
+    "ACME CORPORATION INVOICE",
+    "Invoice Number: INV-2025-1001",
+    "Total Amount Due: 12480.00 USD",
+]
 
 
 def _wait(client, headers, document_id, timeout=30.0):
@@ -58,6 +90,89 @@ class TestExtractionSucceeds:
         assert metadata["pages"] == 1
 
 
+class TestOCR:
+    """Scanned documents must become searchable, and say that they were OCR'd.
+
+    Before this, an image-only PDF produced no text and was rejected, and an
+    image upload was refused outright — the largest gap between what the
+    README promised and what the pipeline did.
+    """
+
+    def test_availability_is_reported_with_a_reason(self):
+        """Degraded modes are explicit here, as with embeddings and the LLM."""
+        available, reason = ocr_availability()
+        assert isinstance(available, bool)
+        assert reason, "an unavailable engine must say why"
+
+    @requires_ocr
+    @pytest.mark.asyncio
+    async def test_reads_an_image_only_pdf(self, tmp_path):
+        """A real scan: rasterised text, no text layer whatsoever."""
+        path = tmp_path / "scanned.pdf"
+        _render_scan(SCAN_LINES).save(str(path), "PDF", resolution=200.0)
+
+        text, metadata = await extract_text_from_file(str(path))
+
+        assert "ACME" in text.upper()
+        assert "12480" in text
+        assert metadata["ocr_pages"] == [1], "the OCR'd page must be recorded"
+        assert metadata["ocr_engine"]
+
+    @requires_ocr
+    @pytest.mark.asyncio
+    async def test_ocr_text_still_carries_page_markers(self, tmp_path):
+        """Without the marker an OCR'd page cannot be cited."""
+        path = tmp_path / "scanned.pdf"
+        _render_scan(SCAN_LINES).save(str(path), "PDF", resolution=200.0)
+
+        text, _ = await extract_text_from_file(str(path))
+
+        assert "--- Page 1 ---" in text
+
+    @requires_ocr
+    @pytest.mark.asyncio
+    async def test_reads_an_uploaded_image(self, tmp_path):
+        path = tmp_path / "receipt.png"
+        _render_scan(SCAN_LINES).save(str(path))
+
+        text, metadata = await extract_text_from_file(str(path))
+
+        assert "ACME" in text.upper()
+        assert metadata["ocr_pages"] == [1]
+        assert metadata["pages"] == 1
+
+    @pytest.mark.asyncio
+    async def test_a_pdf_with_a_text_layer_is_not_ocred(
+        self, tmp_path, minimal_pdf_bytes
+    ):
+        """OCR is the expensive path; it must not run when text is present."""
+        path = tmp_path / "native.pdf"
+        path.write_bytes(minimal_pdf_bytes)
+
+        text, metadata = await extract_text_from_file(str(path))
+
+        assert "Zephyr" in text
+        assert "ocr_pages" not in metadata
+
+    @pytest.mark.asyncio
+    async def test_a_scan_without_ocr_explains_itself(self, tmp_path, monkeypatch):
+        """With OCR off, the failure names the reason instead of being generic."""
+        import backend.common.helpers as helpers
+
+        monkeypatch.setattr(
+            helpers,
+            "ocr_availability",
+            lambda: (False, "OCR is disabled (ENABLE_OCR=false)."),
+        )
+        path = tmp_path / "receipt.png"
+        path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
+
+        with pytest.raises(TextExtractionError) as excinfo:
+            await extract_text_from_file(str(path))
+
+        assert "ENABLE_OCR" in str(excinfo.value)
+
+
 class TestExtractionFailsLoudly:
     @pytest.mark.asyncio
     async def test_unsupported_extension_raises(self, tmp_path):
@@ -68,8 +183,12 @@ class TestExtractionFailsLoudly:
             await extract_text_from_file(str(path))
 
     @pytest.mark.asyncio
-    async def test_an_image_is_rejected_rather_than_faked(self, tmp_path):
-        """The old code returned a placeholder string and indexed it."""
+    async def test_an_unreadable_image_is_rejected_rather_than_faked(self, tmp_path):
+        """The old code returned a placeholder string and indexed it.
+
+        This file is not a decodable image, so it fails whether or not OCR is
+        installed — but it must fail with a reason, never as empty content.
+        """
         path = tmp_path / "scan.png"
         path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
 

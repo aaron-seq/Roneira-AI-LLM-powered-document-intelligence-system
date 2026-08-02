@@ -37,7 +37,14 @@ def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
 @pytest.fixture(scope="session")
 def workspace() -> Iterator[Path]:
     """An isolated directory for uploads, the database and the vector store."""
-    with tempfile.TemporaryDirectory(prefix="roneira-tests-") as directory:
+    # ignore_cleanup_errors: ChromaDB does not release its handle on
+    # chroma.sqlite3 promptly, and on Windows an open file cannot be unlinked,
+    # so cleanup raises PermissionError(WinError 32) *after* the tests have
+    # already passed. The directory is a temp dir either way; failing teardown
+    # over it turns a green run red for no signal.
+    with tempfile.TemporaryDirectory(
+        prefix="roneira-tests-", ignore_cleanup_errors=True
+    ) as directory:
         root = Path(directory)
         (root / "uploads").mkdir()
         (root / "processed").mkdir()

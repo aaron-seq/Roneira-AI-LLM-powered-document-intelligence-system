@@ -18,6 +18,7 @@ load-bearing for the product:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 import uuid
@@ -28,6 +29,7 @@ from backend.core.config import get_settings
 from backend.core.models import DocumentStatus
 from backend.observability.structured_logging import get_logger, with_correlation_id
 from backend.repositories.document_repository import DocumentRepository
+from backend.services.document_insights import build_insights, summarise
 from backend.services.file_validation import (
     ValidatedUpload,
     save_upload_stream,
@@ -257,33 +259,50 @@ class DocumentProcessorService:
         doc_metadata: Dict[str, Any],
         options: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Run LLM enrichment, degrading to a text-only result on failure."""
+        """Analyse the document, using the LLM where it is available.
+
+        Entities, personal-data detection and an extractive summary are derived
+        from the text itself, so they are produced whether or not an LLM is
+        reachable. That matters because no LLM is the ordinary case for a local
+        run, and a document that yields nothing but its own text back is not
+        worth much.
+        """
+        # Regex and word statistics over a large document are CPU-bound; keep
+        # them off the event loop, as with OCR.
+        insights = await asyncio.to_thread(build_insights, extracted_text)
+
         if not options.get("enhance_with_ai", True):
             return {
-                "summary": "AI enrichment was disabled for this document.",
+                "summary": summarise(extracted_text),
                 "key_points": [],
-                "entities": [],
                 "enrichment": "skipped",
+                "summary_source": "extractive",
+                **insights,
             }
 
         if not self.ai_enabled:
             return {
-                "summary": (
-                    "Text extracted and indexed. AI enrichment was unavailable "
-                    "(no LLM configured), so no summary or entities were produced."
-                ),
+                "summary": summarise(extracted_text),
                 "key_points": [],
-                "entities": [],
                 "enrichment": "unavailable",
+                # Named so a reader knows this summary is the document's own
+                # sentences, not prose written about it.
+                "summary_source": "extractive",
+                **insights,
             }
 
         result = await self.llm_service.enhance_document_data(
             extracted_text, doc_metadata
         )
         result.setdefault("enrichment", "completed")
+        result.setdefault("summary_source", "llm")
         # The full text is already stored on the document row; keeping a second
         # copy inside the JSON column doubled the storage for no benefit.
         result.pop("enhanced_text", None)
+
+        # Pattern-derived entities are exact spans from the document, so they
+        # supersede the model's recollection of them.
+        result.update(insights)
         return result
 
     # --------------------------------------------------------------- helpers

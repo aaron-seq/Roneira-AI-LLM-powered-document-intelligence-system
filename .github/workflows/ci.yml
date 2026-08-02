@@ -41,8 +41,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          # ruff and mypy are pinned in requirements.txt. Installing them
+          # unpinned here meant CI silently linted with a different version
+          # than a developer has locally.
           pip install -r requirements.txt
-          pip install ruff mypy
 
       - name: Lint (ruff)
         run: ruff check backend/
@@ -68,6 +70,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
+
+      # OCR needs the tesseract binary, which pip cannot provide. Without it
+      # the scanned-document tests skip, and the feature would ship untested.
+      - name: Install tesseract
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
 
       - name: Install dependencies
         run: |
@@ -252,11 +259,22 @@ jobs:
             -e SECRET_KEY=docker-ci-secret-key-0123456789abcdefghij \
             -e ENVIRONMENT=development \
             roneira-document-intelligence:ci
-          for _ in $(seq 1 30); do
+          # The first boot downloads the sentence-transformers model (~90MB)
+          # inside the lifespan, before anything is served — so nothing answers
+          # until that finishes. Thirty seconds was not enough on a cold cache,
+          # and this job only ever ran green because it was skipped behind the
+          # failing test job.
+          for attempt in $(seq 1 180); do
             if curl -fsS http://127.0.0.1:8000/api/health/live > /dev/null; then
-              echo "Container is healthy"
+              echo "Container is healthy after ${attempt}s"
               docker rm -f roneira-ci
               exit 0
+            fi
+            if ! docker ps -q --filter name=roneira-ci --filter status=running | grep -q .; then
+              echo "Container exited during startup. Logs:"
+              docker logs roneira-ci
+              docker rm -f roneira-ci
+              exit 1
             fi
             sleep 1
           done
