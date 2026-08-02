@@ -1,50 +1,58 @@
+# Render deployment blueprint.
+#
+# Four things here were wrong, each enough to break a deploy on its own:
+#   - the start command ran `app.main:app`, a legacy tree the service no
+#     longer contains;
+#   - the health check pointed at `/health`, which 404s because every route is
+#     mounted under `/api`;
+#   - `ENVIRONMENT=production` was set without the values the production
+#     validator requires, so the process refused to start by design;
+#   - it used the retired `env:` key and declared PostgreSQL as a `pserv`
+#     service. Render's current blueprint spec uses `runtime:` and a top-level
+#     `databases:` block.
+#
+# Set ALLOWED_HOSTS and ALLOWED_ORIGINS to your real hostnames before the
+# first deploy. Wildcards are refused in production, deliberately.
+
+databases:
+  # PostgreSQL. Required for more than one worker; SQLite is single-writer.
+  - name: document-intelligence-db
+    plan: free
+    region: oregon
+
 services:
-  # Main web service
   - type: web
     name: document-intelligence-api
-    env: python
+    runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    startCommand: python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health/live
     envVars:
       - key: ENVIRONMENT
         value: production
+      - key: DEBUG
+        value: "false"
       - key: PYTHONPATH
         value: /opt/render/project/src
       - key: DATABASE_URL
-        fromService:
-          type: pserv
+        fromDatabase:
           name: document-intelligence-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: document-intelligence-redis
           property: connectionString
       - key: SECRET_KEY
         generateValue: true
-      - key: AZURE_OPENAI_API_KEY
+      # Required: production refuses to start with "*" for either of these.
+      - key: ALLOWED_HOSTS
         sync: false
-      - key: AZURE_OPENAI_ENDPOINT
+      - key: ALLOWED_ORIGINS
         sync: false
-      - key: AZURE_DOCUMENT_INTELLIGENCE_KEY
-        sync: false
-      - key: AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT
-        sync: false
-
-  # PostgreSQL database
-  - type: pserv
-    name: document-intelligence-db
-    env: postgresql
-    plan: free
-    region: oregon
-    ipAllowList: []
-
-  # Redis cache
-  - type: redis
-    name: document-intelligence-redis
-    plan: free
-    region: oregon
-    ipAllowList: []
-    maxmemoryPolicy: allkeys-lru
+      # The vector store and uploads live on local disk, so a second instance
+      # would not see the first one's index. Keep this at 1 until the store
+      # moves somewhere shared.
+      - key: WORKERS
+        value: "1"
+      # OCR needs the tesseract binary, which Render's Python runtime does not
+      # ship. Without it scanned documents are refused with that reason; use
+      # the Docker runtime if you need them.
+      - key: ENABLE_OCR
+        value: "false"

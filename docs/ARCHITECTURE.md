@@ -284,10 +284,19 @@ Still unwired, and honestly so: `services/feedback_service.py` (the feedback
 router talks to the repository directly) and `training/*`, which is offline
 tooling rather than application code.
 
-There is also a legacy `app/` tree (an older Azure-oriented implementation)
-and a `src/` tree of research and demo scripts. Neither is imported by
-`backend.main`. `app/` is what the Dockerfile's production stage used to run,
-which is how production and development ended up as different applications.
+The legacy `app/` tree — an older Azure-oriented implementation with its own
+config, authentication, database manager and services — has been removed,
+along with the root `config.py` that only it imported. It was what the
+Dockerfile's production stage once ran, which is how production and
+development ended up as two different applications. That was fixed in the
+Dockerfile earlier but **not** in `deployment/railway.toml` and
+`deployment/render.yaml`, which were still starting `app.main:app` — so a
+Railway or Render deploy ran the dead tree. Both now start `backend.main:app`.
+
+`src/` still holds research and demo scripts (data cataloguing, ontology,
+synthetic data, evaluation) with their own tests under `tests/`. They are not
+imported by `backend.main` and are excluded from the default `pytest` run;
+`pytest tests/` opts into them.
 
 ---
 

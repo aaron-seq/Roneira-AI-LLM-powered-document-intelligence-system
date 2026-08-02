@@ -1,25 +1,47 @@
+# Railway deployment.
+#
+# The start command ran `app.main:app`, a legacy tree the service no longer
+# contains, and the health check pointed at `/health`, which 404s because every
+# route is mounted under `/api`.
+#
+# `ENVIRONMENT = "production"` is kept, but note what it obliges you to set:
+# the production validator refuses to start with the placeholder secret key,
+# with DEBUG on, or with "*" for hosts or origins. Set SECRET_KEY,
+# ALLOWED_HOSTS and ALLOWED_ORIGINS as Railway variables before deploying.
+# That refusal is the feature — it is far cheaper than discovering an open
+# instance later.
+
 [build]
 buildCommand = "pip install -r requirements.txt"
 watchPatterns = ["**/*.py", "requirements.txt"]
 
 [deploy]
-startCommand = "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+startCommand = "python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 
 [env]
 ENVIRONMENT = "production"
+DEBUG = "false"
 PYTHONPATH = "/app"
 PORT = "8000"
+# Uploads and the vector store are on local disk, so a second instance would
+# not see the first one's index.
+WORKERS = "1"
+# OCR needs the tesseract system binary, which a plain Python build does not
+# provide. Scanned documents are refused with that reason rather than being
+# indexed empty; deploy the Dockerfile instead if you need them.
+ENABLE_OCR = "false"
 
-# Health check configuration
 [healthCheck]
-path = "/health"
+path = "/api/health/live"
 interval = 30
 timeout = 10
 
-# Scaling configuration
+# Scaling is capped at one instance on purpose. The vector store and uploaded
+# files are on the instance's own disk; a second replica would answer from an
+# empty index. Move both to shared storage before raising this.
 [scaling]
 minInstances = 1
-maxInstances = 3
+maxInstances = 1
 targetCpuUtilization = 70

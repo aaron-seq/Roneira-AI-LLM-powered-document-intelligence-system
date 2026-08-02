@@ -36,8 +36,18 @@ langchain-core==0.2.33
 
 # RAG Pipeline (Vector Search & Embeddings)
 sentence-transformers>=2.2.0
-chromadb>=0.4.0
-numpy>=1.24.0
+# chromadb and numpy are pinned together, and the pin is load-bearing.
+# chromadb 0.5.0 does `Union[np.uint, np.int_, np.float_]` in api/types.py,
+# and `np.float_` was removed in NumPy 2.0. chromadb's own metadata requires
+# `numpy` with no upper bound, so `pip install -r requirements.txt` was free
+# to resolve numpy 2.x and produce a tree that raises AttributeError on
+# `import chromadb` — before the application serves a single request.
+# CI happened to resolve 1.26.4; nothing guaranteed it.
+# Upgrade path: chromadb releases after 0.5.4 replace np.float_ and work under
+# NumPy 2. Moving requires re-checking vector_store_service against their
+# client API, so it is a deliberate change rather than a version bump.
+chromadb==0.5.0
+numpy>=1.24.0,<2.0
 tiktoken>=0.5.0
 
 # HTTP and API clients
