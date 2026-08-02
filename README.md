@@ -348,6 +348,8 @@ Failure modes that have actually happened here, and what each one means.
 | A scan is indexed but the text is garbled | OCR quality is limited by the scan | Check `ocr_pages` on the document; there is no deskew/denoise pass |
 | Windows: `PermissionError: [WinError 32]` tearing down tests | ChromaDB holds `chroma.sqlite3` open; the temp dir cannot be unlinked | Already ignored in `conftest.py`; it is a teardown artefact, not a test failure |
 | `AttributeError: np.float_ was removed in the NumPy 2.0 release` on startup | An older environment resolved NumPy 2 alongside chromadb 0.5, which uses `np.float_` | `pip install -r requirements.txt` — both are pinned together now |
+| `sqlite3.OperationalError: table documents already exists` on startup | Several Gunicorn workers created the schema at once | Fixed: the losing worker rechecks and continues. If you see it again, the database is genuinely unreachable |
+| Container exits during startup under Gunicorn | Multiple workers on SQLite, which is single-writer | `WORKERS` now defaults to 1 for SQLite; raise it only with `DATABASE_URL` on PostgreSQL |
 | Windows: Python crashes under Git Bash with `TP_NUM_C_BUFS too small` | A Cygwin/MSYS limitation, not a project bug | Run Python, `pytest` and `uvicorn` from PowerShell or `cmd` |
 | Frontend loads a different app on `localhost:3000` | Another process owns IPv6 `::1:3000`; Vite binds IPv4 | Use `http://127.0.0.1:3000`, or free the port |
 
