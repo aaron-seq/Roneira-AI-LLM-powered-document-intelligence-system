@@ -59,6 +59,50 @@ def _boot():
     return create_application()
 
 
+class TestConcurrentStartup:
+    """Every gunicorn worker runs the schema bootstrap at once.
+
+    ``create_all(checkfirst=True)`` probes for the table and *then* issues
+    CREATE TABLE, so two workers can both find it missing and both create it.
+    The loser got "table documents already exists" and the process died during
+    startup — timing-dependent, so the same image passed CI on one run and
+    exited on the next.
+    """
+
+    @pytest.mark.asyncio
+    async def test_many_managers_can_initialise_the_same_database(self, tmp_path):
+        import asyncio
+
+        from backend.core.database import DatabaseManager
+
+        url = f"sqlite+aiosqlite:///{tmp_path / 'race.db'}"
+        managers = [DatabaseManager(database_url=url) for _ in range(8)]
+
+        # Concurrently, as gunicorn does — not one after another.
+        await asyncio.gather(*(m.initialize() for m in managers))
+
+        try:
+            assert all(m.is_initialized for m in managers)
+            assert await managers[0]._missing_tables() == []
+        finally:
+            await asyncio.gather(*(m.close() for m in managers))
+
+    @pytest.mark.asyncio
+    async def test_a_real_failure_still_raises(self, tmp_path):
+        """The recheck must not turn every database error into a shrug."""
+        from sqlalchemy.exc import OperationalError
+
+        from backend.core.database import DatabaseManager
+
+        # A directory that does not exist: SQLite cannot open the file, and no
+        # amount of retrying will change that.
+        manager = DatabaseManager(
+            database_url=f"sqlite+aiosqlite:///{tmp_path / 'nope' / 'x.db'}"
+        )
+        with pytest.raises(OperationalError):
+            await manager.initialize()
+
+
 class TestDocumentsSurviveRestart:
     def test_a_document_is_still_listed_after_a_restart(self, restartable_env):
         payload = b"Board minutes: the Zephyr acquisition was approved."

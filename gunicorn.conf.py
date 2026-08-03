@@ -17,13 +17,21 @@ import os
 bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 
 # --- Worker Processes ---
-# The number of worker processes to spawn. A common recommendation is
-# (2 * number of CPU cores) + 1.
-# NOTE: with the default SQLite database and the on-disk ChromaDB store,
-# more than one worker means several processes writing the same files. Keep
-# WORKERS=1 unless DATABASE_URL points at PostgreSQL and the vector store is
-# a shared service. See docs/DEPLOYMENT.md.
-workers = int(os.getenv('WORKERS', multiprocessing.cpu_count() * 2 + 1))
+# (2 * cores) + 1 is the usual recommendation, and it is right for a server
+# database. It is wrong for this application's default configuration, where
+# SQLite and the on-disk ChromaDB store are both single-writer: several
+# workers means several processes writing the same files.
+#
+# The advice to "keep WORKERS=1 unless DATABASE_URL points at PostgreSQL" was
+# already written here, while the default did the opposite — a container run
+# with no configuration got nine workers on SQLite. The default now follows
+# the advice, and an explicit WORKERS still wins.
+_default_workers = (
+    1
+    if os.getenv('DATABASE_URL', 'sqlite').startswith('sqlite')
+    else multiprocessing.cpu_count() * 2 + 1
+)
+workers = int(os.getenv('WORKERS', _default_workers))
 
 # The type of worker to use. 'uvicorn.workers.UvicornWorker' is ideal for
 # running ASGI applications like FastAPI.

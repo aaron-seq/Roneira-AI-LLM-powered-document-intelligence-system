@@ -186,6 +186,7 @@ The design principle: **degrade visibly, never silently**.
 |---|---|---|
 | No embedding model | Keyword-only lexical matching | `/api/health` → `degraded`; `embeddings_are_real: false` on every response; `roneira_embedding_backend_real` gauge = 0 |
 | tesseract missing | Scans and images are refused, naming the reason; text documents unaffected | The document's failure reason; `ocr_unavailable_reason` in metadata |
+| Two workers create the schema at once | The loser waits and rechecks instead of dying | `Schema was created concurrently by another worker` at INFO |
 | Ollama unreachable | Text still extracted and indexed; no summary or chat prose | `/api/health` → `degraded` with the endpoint it tried |
 | Database down | Requests fail | `/api/health/ready` → 503; liveness stays 200 so the container is not killed |
 | Text extraction fails | Document marked `failed` with a readable reason; nothing indexed | Document status; `roneira_documents_processed_total{status="error"}` |
