@@ -298,9 +298,7 @@ def generate_performance_dashboard_html(output_path: Path):
     ]
 
     total_calls = sum(p["calls"] for p in performance_data)
-    avg_success = sum(p["success_rate"] for p in performance_data) / len(
-        performance_data
-    )
+    avg_success = sum(p["success_rate"] for p in performance_data) / len(performance_data)
 
     # Build performance table rows
     table_rows = ""

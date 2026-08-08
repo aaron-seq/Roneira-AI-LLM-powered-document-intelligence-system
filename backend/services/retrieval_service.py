@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.core.config import get_settings
 from backend.services.embedding_service import EmbeddingService
+from backend.services.reranking import Reranker
 from backend.services.text_splitter_service import TextSplitterService
 from backend.services.vector_store_service import (
     SearchResult,
@@ -95,6 +96,9 @@ class RetrievalService:
         )
         self.min_score = settings.retrieval_min_score
         self.hybrid_enabled = settings.hybrid_retrieval
+        self.reranker = Reranker(
+            model_name=settings.rerank_model, enabled=settings.rerank_results
+        )
 
         self.text_splitter = TextSplitterService(
             default_chunk_size=self.chunk_size,
@@ -133,6 +137,7 @@ class RetrievalService:
             return
         await self.embedding_service.initialize()
         await self.vector_store.initialize()
+        await self.reranker.initialize()
         self.is_initialized = True
 
         if not self.embedding_service.is_real:
@@ -336,6 +341,16 @@ class RetrievalService:
 
         if self.hybrid_enabled:
             candidates = _rank_hybrid(query, candidates)
+
+        # The cross-encoder reads the question and the passage together, so it
+        # runs last and gets the final say. Hybrid ranking still decides which
+        # candidates are worth that cost. Scores are untouched either way:
+        # cross-encoder outputs are unbounded logits, not similarities, and
+        # writing them into `score` would break RETRIEVAL_MIN_SCORE and the
+        # "% match" a citation shows.
+        order = await self.reranker.rank(query, [c.content for c in candidates])
+        if order is not None:
+            candidates = [candidates[i] for i in order]
 
         filtered_results = candidates[:top_k]
 

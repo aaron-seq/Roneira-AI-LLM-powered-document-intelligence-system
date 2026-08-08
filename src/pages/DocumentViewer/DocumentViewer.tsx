@@ -59,6 +59,10 @@ interface ComparisonChange {
     right_page?: number | null;
 }
 
+/** "1 pages" is the sort of thing that makes an interface look unfinished. */
+const plural = (count: number, noun: string) =>
+    `${count} ${noun}${count === 1 ? '' : 's'}`;
+
 const CHANGE_COLOURS: Record<string, string> = {
     added: '#10b981',
     removed: '#ef4444',
@@ -219,15 +223,15 @@ const DocumentViewer = () => {
                         color={documentData.status === 'completed' ? 'success' : 'default'}
                     />
                     {documentData.page_count ? (
-                        <Chip size="small" variant="outlined" label={`${documentData.page_count} pages`} />
+                        <Chip size="small" variant="outlined" label={plural(documentData.page_count, 'page')} />
                     ) : null}
                     {documentData.word_count ? (
-                        <Chip size="small" variant="outlined" label={`${documentData.word_count} words`} />
+                        <Chip size="small" variant="outlined" label={plural(documentData.word_count, 'word')} />
                     ) : null}
                     <Chip
                         size="small"
                         variant="outlined"
-                        label={`${documentData.chunk_count ?? 0} searchable chunks`}
+                        label={plural(documentData.chunk_count ?? 0, 'searchable chunk')}
                     />
 
                     {/* Machine-read pages are worth flagging: OCR quality is

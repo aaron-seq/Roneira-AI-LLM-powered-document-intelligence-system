@@ -67,15 +67,9 @@ def create_enhanced_ontology():
     ontology.add_relation(vec_db.node_id, embeddings.node_id, RelationType.CONTAINS)
 
     # Add document processing concepts
-    ocr = ontology.add_concept(
-        "OCR", "Optical Character Recognition for text extraction"
-    )
-    chunking = ontology.add_concept(
-        "Chunking", "Breaking documents into smaller pieces"
-    )
-    parsing = ontology.add_concept(
-        "Parsing", "Extracting structured data from documents"
-    )
+    ocr = ontology.add_concept("OCR", "Optical Character Recognition for text extraction")
+    chunking = ontology.add_concept("Chunking", "Breaking documents into smaller pieces")
+    parsing = ontology.add_concept("Parsing", "Extracting structured data from documents")
 
     ontology.add_relation(
         ocr.node_id,

@@ -111,6 +111,14 @@ class Settings(BaseSettings):
     #: the one containing the literal term the question asked for.
     hybrid_retrieval: bool = Field(default=True)
 
+    #: Re-score the retrieved candidates with a cross-encoder, which reads the
+    #: question and the passage together instead of comparing two vectors that
+    #: were computed independently. Materially more accurate at ranking the
+    #: right passage first; costs a ~80MB model download and roughly 100ms per
+    #: query on CPU. Off leaves retrieval on embedding similarity.
+    rerank_results: bool = Field(default=True)
+    rerank_model: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+
     #: Refuse to start unless a real embedding model loads. Otherwise the
     #: service falls back to keyword-only lexical matching, which works but
     #: cannot match paraphrases — set this true where that is unacceptable.
