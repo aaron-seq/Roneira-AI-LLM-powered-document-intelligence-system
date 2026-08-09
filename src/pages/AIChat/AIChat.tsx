@@ -319,12 +319,12 @@ const AIChat = () => {
             display: 'flex', 
             flexDirection: 'column',
             height: '100vh',
-            background: 'linear-gradient(180deg, #0a0f1a 0%, #0f172a 50%, #1e293b 100%)',
+            background: 'linear-gradient(180deg, #0F100E 0%, #0A0B09 50%, #171815 100%)',
         }}>
             {/* Header */}
             <Box sx={{ 
                 p: 2, 
-                borderBottom: '1px solid rgba(99, 102, 241, 0.1)',
+                borderBottom: '1px solid rgba(208, 162, 21, 0.08)',
                 background: 'rgba(10, 15, 26, 0.8)',
                 backdropFilter: 'blur(20px)',
             }}>
@@ -333,10 +333,10 @@ const AIChat = () => {
                         <IconButton onClick={() => navigate('/dashboard')} sx={{ color: 'text.secondary' }}>
                             <ArrowBack />
                         </IconButton>
-                        <AutoAwesome sx={{ color: '#6366f1', fontSize: 28 }} />
+                        <AutoAwesome sx={{ color: '#D0A215', fontSize: 28 }} />
                         <Box>
                             <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                                Roneira <Box component="span" sx={{ color: '#06b6d4' }}>Document Intelligence System</Box>
+                                Roneira <Box component="span" sx={{ color: '#D0A215' }}>Document Intelligence System</Box>
                             </Typography>
                             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                 {documents.length} verified documents indexed
@@ -350,8 +350,8 @@ const AIChat = () => {
                             onClick={() => setDetailedMode(!detailedMode)}
                             sx={{
                                 background: detailedMode 
-                                    ? 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
-                                    : 'rgba(99, 102, 241, 0.2)',
+                                    ? '#D0A215'
+                                    : 'rgba(42, 43, 38, 1)',
                                 color: 'white',
                                 fontWeight: 600,
                                 cursor: 'pointer',
@@ -385,13 +385,13 @@ const AIChat = () => {
                             p: 2.5,
                             borderRadius: message.role === 'user' ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
                             background: message.role === 'user'
-                                ? 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)'
-                                : 'linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.7) 100%)',
-                            border: message.role === 'assistant' ? '1px solid rgba(99, 102, 241, 0.2)' : 'none',
+                                ? '#D0A215'
+                                : 'linear-gradient(135deg, rgba(10, 11, 9, 0.9) 0%, rgba(23, 24, 21, 0.7) 100%)',
+                            border: message.role === 'assistant' ? '1px solid rgba(42, 43, 38, 1)' : 'none',
                         }}>
                             {message.isLoading ? (
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                    <CircularProgress size={20} sx={{ color: '#06b6d4' }} />
+                                    <CircularProgress size={20} sx={{ color: '#D0A215' }} />
                                     <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                                         Analyzing documents...
                                     </Typography>
@@ -421,7 +421,7 @@ const AIChat = () => {
                                                 sx={{
                                                     height: 22,
                                                     fontSize: '0.68rem',
-                                                    color: message.grounded ? '#10b981' : '#f59e0b',
+                                                    color: message.grounded ? '#7A9A5B' : '#C9922B',
                                                     borderColor: message.grounded ? 'rgba(16,185,129,0.4)' : 'rgba(245,158,11,0.4)',
                                                     background: message.grounded ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
                                                 }}
@@ -437,7 +437,7 @@ const AIChat = () => {
                                                         sx={{
                                                             height: 22,
                                                             fontSize: '0.68rem',
-                                                            color: '#f59e0b',
+                                                            color: '#C9922B',
                                                             borderColor: 'rgba(245,158,11,0.4)',
                                                             background: 'rgba(245,158,11,0.1)',
                                                         }}
@@ -449,8 +449,8 @@ const AIChat = () => {
 
                                     {/* Document References */}
                                     {message.references && message.references.length > 0 && (
-                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(99, 102, 241, 0.2)' }}>
-                                            <Typography variant="caption" sx={{ color: '#06b6d4', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid rgba(42, 43, 38, 1)' }}>
+                                            <Typography variant="caption" sx={{ color: '#D0A215', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
                                                 <Description sx={{ fontSize: 16 }} />
                                                 Sources ({message.references.length})
                                             </Typography>
@@ -462,8 +462,8 @@ const AIChat = () => {
                                                         sx={{
                                                             p: 1.5,
                                                             borderRadius: 2,
-                                                            background: 'rgba(99, 102, 241, 0.1)',
-                                                            border: '1px solid rgba(99, 102, 241, 0.15)',
+                                                            background: 'rgba(208, 162, 21, 0.08)',
+                                                            border: '1px solid rgba(42, 43, 38, 1)',
                                                             cursor: 'pointer',
                                                         }}
                                                     >
@@ -479,7 +479,7 @@ const AIChat = () => {
                                                                         width: 24,
                                                                         height: 24,
                                                                         fontSize: '0.7rem',
-                                                                        background: '#6366f1'
+                                                                        background: '#D0A215'
                                                                     }}
                                                                 />
                                                                 <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary' }}>
@@ -491,7 +491,7 @@ const AIChat = () => {
                                                                         label={`p. ${ref.page_number}`}
                                                                         size="small"
                                                                         variant="outlined"
-                                                                        sx={{ height: 20, fontSize: '0.65rem', color: '#06b6d4', borderColor: 'rgba(6,182,212,0.4)' }}
+                                                                        sx={{ height: 20, fontSize: '0.65rem', color: '#D0A215', borderColor: 'rgba(6,182,212,0.4)' }}
                                                                     />
                                                                 )}
                                                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -506,7 +506,7 @@ const AIChat = () => {
                                                                             e.stopPropagation();
                                                                             handleDownload(ref.document_id, ref.filename ?? ref.document_id);
                                                                         }}
-                                                                        sx={{ color: '#06b6d4', mr: 1 }}
+                                                                        sx={{ color: '#D0A215', mr: 1 }}
                                                                     >
                                                                         <Download fontSize="small" />
                                                                     </IconButton>
@@ -577,7 +577,7 @@ const AIChat = () => {
             {/* Input Area */}
             <Box sx={{ 
                 p: 3,
-                borderTop: '1px solid rgba(99, 102, 241, 0.1)',
+                borderTop: '1px solid rgba(208, 162, 21, 0.08)',
                 background: 'rgba(10, 15, 26, 0.8)',
                 backdropFilter: 'blur(20px)',
             }}>
@@ -588,11 +588,11 @@ const AIChat = () => {
                     p: 1,
                     pl: 2,
                     borderRadius: 4,
-                    background: 'rgba(15, 23, 42, 0.8)',
-                    border: '2px solid rgba(99, 102, 241, 0.2)',
+                    background: 'rgba(10, 11, 9, 0.8)',
+                    border: '2px solid rgba(42, 43, 38, 1)',
                     '&:focus-within': {
-                        border: '2px solid rgba(99, 102, 241, 0.5)',
-                        boxShadow: '0 0 20px rgba(99, 102, 241, 0.2)',
+                        border: '2px solid rgba(208, 162, 21, 0.5)',
+                        boxShadow: '0 0 20px rgba(42, 43, 38, 1)',
                     }
                 }}>
                     <TextField
@@ -624,13 +624,13 @@ const AIChat = () => {
                         onClick={handleSend}
                         disabled={!inputValue.trim() || isLoading}
                         sx={{ 
-                            background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                            background: '#D0A215',
                             color: 'white',
                             '&:hover': {
-                                background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                                background: '#B58E12',
                             },
                             '&:disabled': {
-                                background: 'rgba(99, 102, 241, 0.3)',
+                                background: 'rgba(42, 43, 38, 1)',
                                 color: 'rgba(255,255,255,0.5)',
                             }
                         }}
@@ -648,8 +648,8 @@ const AIChat = () => {
                 PaperProps={{
                     sx: {
                         width: 320,
-                        background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-                        borderLeft: '1px solid rgba(99, 102, 241, 0.2)',
+                        background: 'linear-gradient(180deg, #0A0B09 0%, #171815 100%)',
+                        borderLeft: '1px solid rgba(42, 43, 38, 1)',
                         p: 3
                     }
                 }}
@@ -666,7 +666,7 @@ const AIChat = () => {
                         <Switch 
                             checked={ragEnabled} 
                             onChange={(e) => setRagEnabled(e.target.checked)}
-                            sx={{ '& .MuiSwitch-thumb': { bgcolor: '#6366f1' } }}
+                            sx={{ '& .MuiSwitch-thumb': { bgcolor: '#D0A215' } }}
                         />
                     }
                     label={<Typography sx={{ color: 'text.primary' }}>Enable RAG</Typography>}
@@ -684,7 +684,7 @@ const AIChat = () => {
                     min={0}
                     max={1}
                     step={0.1}
-                    sx={{ color: '#6366f1', mb: 3 }}
+                    sx={{ color: '#D0A215', mb: 3 }}
                 />
                 <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 3 }}>
                     Lower = more focused, Higher = more creative
@@ -698,7 +698,7 @@ const AIChat = () => {
                     min={128}
                     max={2048}
                     step={128}
-                    sx={{ color: '#06b6d4', mb: 3 }}
+                    sx={{ color: '#D0A215', mb: 3 }}
                 />
                 <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 3 }}>
                     Maximum response length
@@ -711,11 +711,11 @@ const AIChat = () => {
                 <Chip 
                     label="llama3.2:3b" 
                     size="small" 
-                    sx={{ bgcolor: 'rgba(99, 102, 241, 0.2)', color: '#6366f1', mb: 3 }}
+                    sx={{ bgcolor: 'rgba(42, 43, 38, 1)', color: '#D0A215', mb: 3 }}
                 />
                 
                 <Typography variant="body2" sx={{ color: 'text.secondary', mb: 1 }}>Session ID</Typography>
-                <Typography variant="caption" sx={{ color: '#06b6d4', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                <Typography variant="caption" sx={{ color: '#D0A215', fontFamily: 'monospace', wordBreak: 'break-all' }}>
                     {sessionId}
                 </Typography>
                 
@@ -724,7 +724,7 @@ const AIChat = () => {
                         fullWidth 
                         variant="outlined" 
                         onClick={() => setSettingsOpen(false)}
-                        sx={{ borderColor: 'rgba(99, 102, 241, 0.3)', color: 'text.primary' }}
+                        sx={{ borderColor: 'rgba(42, 43, 38, 1)', color: 'text.primary' }}
                     >
                         Close
                     </Button>

@@ -64,8 +64,8 @@ const plural = (count: number, noun: string) =>
     `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 const CHANGE_COLOURS: Record<string, string> = {
-    added: '#10b981',
-    removed: '#ef4444',
+    added: '#7A9A5B',
+    removed: '#C25E3F',
     changed: '#f59e0b',
 };
 
