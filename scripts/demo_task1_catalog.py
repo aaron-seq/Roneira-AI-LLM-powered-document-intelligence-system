@@ -979,9 +979,7 @@ def main():
     print(f"   Created: {catalog_path}")
 
     print("\nGenerating Quality Report...")
-    quality_path = generate_quality_report(
-        str(output_dir / "task1_quality_report.html")
-    )
+    quality_path = generate_quality_report(str(output_dir / "task1_quality_report.html"))
     print(f"   Created: {quality_path}")
 
     print("\nGenerating Lineage Graph...")

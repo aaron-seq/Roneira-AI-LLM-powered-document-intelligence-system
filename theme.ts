@@ -1,354 +1,272 @@
 import { createTheme, alpha } from '@mui/material/styles';
 
 // ==============================================================================
-// Roneira AI - Modern 2026 Dark Theme
-// Figma-Inspired Glassmorphism Design with Deep Slate Background
+// Roneira — "archive"
+//
+// This is an instrument for checking claims against documents, used where
+// being wrong is expensive. So it borrows from archives and annotated legal
+// paper rather than from dashboards: warm ink and vellum instead of slate and
+// neon, hairline rules instead of glass, and one reserved accent.
+//
+// The previous theme was indigo-and-purple glassmorphism on Tailwind slate —
+// competent, and indistinguishable from every other AI product. Worse, it
+// spent colour on decoration, which left nothing to say "this passage is
+// verified" with.
+//
+// Two rules hold the whole system together:
+//
+//   1. OCHRE MEANS PROVENANCE. The accent is reserved for grounding and
+//      citations. If something is ochre, it is a claim you can check.
+//      Nothing decorative may use it.
+//   2. EVIDENCE IS MONOSPACED. Verbatim material from a document — quoted
+//      passages, page numbers, checksums, IDs — is always mono. The app's own
+//      words are always sans. You can tell them apart without reading.
+//
+// No webfonts. The product runs offline by design, and a font CDN would be a
+// network dependency that fails exactly when someone is working on a plane.
+// Character comes from scale, weight and tracking instead.
 // ==============================================================================
 
-// --- Premium Dark Color Palette ---
-const colors = {
-  primary: {
-    main: '#6366f1', // Vibrant indigo
-    light: '#818cf8',
-    dark: '#4f46e5',
-    contrastText: '#ffffff',
-  },
-  secondary: {
-    main: '#8b5cf6', // Rich purple
-    light: '#a78bfa',
-    dark: '#7c3aed',
-    contrastText: '#ffffff',
-  },
-  success: {
-    main: '#10b981', // Emerald
-    light: '#34d399',
-    dark: '#059669',
-  },
-  warning: {
-    main: '#f59e0b', // Amber
-    light: '#fbbf24',
-    dark: '#d97706',
-  },
-  error: {
-    main: '#ef4444', // Red
-    light: '#f87171',
-    dark: '#dc2626',
-  },
-  info: {
-    main: '#06b6d4', // Cyan accent
-    light: '#22d3ee',
-    dark: '#0891b2',
-  },
-  background: {
-    default: '#0a0f1a', // Deep dark
-    paper: '#0f172a',   // Slate 900
-  },
-  text: {
-    primary: '#f1f5f9',   // Slate 100
-    secondary: '#94a3b8', // Slate 400
-  },
+const palette = {
+  // Printer's ink: near-black with a warm cast, not blue-grey.
+  ink: '#0F100E',
+  inkRaised: '#171815',
+  inkSunken: '#0A0B09',
+  // Warm off-white. Long reading sessions; paper, not screen-blue.
+  vellum: '#E9E5DA',
+  graphite: '#95907F',
+  rule: '#2A2B26',
+  // Reserved: provenance, citations, verified grounding.
+  ochre: '#D0A215',
+  ochreDim: '#8A6D0E',
+  // Annotation red — degraded modes, destructive actions.
+  oxide: '#C25E3F',
+  moss: '#7A9A5B',
+  slate: '#5E7A8A',
 };
 
-// --- Glassmorphism Card Styles ---
-export const glassCard = {
-  background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 41, 59, 0.6) 100%)',
-  backdropFilter: 'blur(20px)',
-  WebkitBackdropFilter: 'blur(20px)',
-  border: '1px solid rgba(99, 102, 241, 0.15)',
-  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+const SANS = [
+  'system-ui',
+  '-apple-system',
+  'Segoe UI',
+  'Roboto',
+  'Helvetica Neue',
+  'Arial',
+  'sans-serif',
+].join(',');
+
+// Evidence face. ui-monospace resolves to SF Mono / Cascadia / Consolas, all
+// of which are already on the machine.
+const MONO = [
+  'ui-monospace',
+  'SFMono-Regular',
+  'SF Mono',
+  'Cascadia Mono',
+  'Consolas',
+  'Liberation Mono',
+  'monospace',
+].join(',');
+
+export const evidenceFont = MONO;
+
+/** Verbatim document text. The signature treatment — use it for anything the
+ *  document said, never for anything the interface says. */
+export const evidence = {
+  fontFamily: MONO,
+  fontSize: '0.8125rem',
+  lineHeight: 1.65,
+  color: palette.vellum,
+  borderLeft: `2px solid ${palette.ochreDim}`,
+  paddingLeft: 12,
+  whiteSpace: 'pre-wrap' as const,
 };
 
-// --- Glowing Accent Styles ---
-export const glowEffect = {
-  primary: '0 0 20px rgba(99, 102, 241, 0.4), 0 0 40px rgba(99, 102, 241, 0.2)',
-  cyan: '0 0 20px rgba(6, 182, 212, 0.4), 0 0 40px rgba(6, 182, 212, 0.2)',
-  success: '0 0 20px rgba(16, 185, 129, 0.4), 0 0 40px rgba(16, 185, 129, 0.2)',
+/** Small uppercase label. Archival vernacular: wide tracking, low contrast. */
+export const microLabel = {
+  fontFamily: SANS,
+  fontSize: '0.6875rem',
+  fontWeight: 600,
+  letterSpacing: '0.09em',
+  textTransform: 'uppercase' as const,
+  color: palette.graphite,
 };
 
-// --- Dark Theme Configuration ---
+/** Panels are defined by a hairline rule, not by a shadow or a blur. */
+export const panel = {
+  background: palette.inkRaised,
+  border: `1px solid ${palette.rule}`,
+  borderRadius: 6,
+};
+
 export const theme = createTheme({
   palette: {
     mode: 'dark',
-    ...colors,
+    primary: { main: palette.ochre, dark: palette.ochreDim, contrastText: palette.ink },
+    secondary: { main: palette.slate, contrastText: palette.vellum },
+    success: { main: palette.moss },
+    warning: { main: palette.oxide },
+    error: { main: palette.oxide },
+    info: { main: palette.slate },
+    background: { default: palette.ink, paper: palette.inkRaised },
+    text: { primary: palette.vellum, secondary: palette.graphite },
+    divider: palette.rule,
   },
-  
+
+  shape: { borderRadius: 6 },
+
   typography: {
-    fontFamily: '"Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif',
-    h1: { 
-      fontSize: '2.5rem', 
-      fontWeight: 700,
-      letterSpacing: '-0.02em',
-      color: colors.text.primary,
-    },
-    h2: { 
-      fontSize: '2rem', 
-      fontWeight: 700,
-      letterSpacing: '-0.01em',
-    },
-    h3: { 
-      fontSize: '1.5rem', 
-      fontWeight: 600,
-    },
-    h4: {
-      fontSize: '1.25rem',
-      fontWeight: 600,
-    },
-    h5: {
-      fontSize: '1rem',
-      fontWeight: 600,
-    },
-    h6: {
-      fontSize: '0.875rem',
-      fontWeight: 600,
-      textTransform: 'uppercase',
-      letterSpacing: '0.5px',
-    },
-    body1: {
-      fontSize: '0.9375rem',
-      lineHeight: 1.6,
-    },
-    body2: {
-      fontSize: '0.8125rem',
-      lineHeight: 1.5,
-      color: colors.text.secondary,
-    },
-    button: {
-      textTransform: 'none',
-      fontWeight: 600,
-      letterSpacing: '0.02em',
-    },
+    fontFamily: SANS,
+    // Display sizes are tightened; body stays comfortable. The contrast
+    // between the two is where the personality lives without a webfont.
+    h1: { fontSize: '2.25rem', fontWeight: 600, letterSpacing: '-0.025em', lineHeight: 1.15 },
+    h2: { fontSize: '1.75rem', fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.2 },
+    h3: { fontSize: '1.375rem', fontWeight: 600, letterSpacing: '-0.015em' },
+    h4: { fontSize: '1.175rem', fontWeight: 600, letterSpacing: '-0.01em' },
+    h5: { fontSize: '1.0625rem', fontWeight: 600 },
+    h6: { fontSize: '0.9375rem', fontWeight: 600, letterSpacing: '0.005em' },
+    body1: { fontSize: '0.9375rem', lineHeight: 1.65 },
+    body2: { fontSize: '0.875rem', lineHeight: 1.6 },
+    caption: { fontSize: '0.75rem', lineHeight: 1.5, color: palette.graphite },
+    button: { textTransform: 'none', fontWeight: 600, letterSpacing: '0.01em' },
   },
-
-  shape: { borderRadius: 16 },
-
-  shadows: [
-    'none',
-    '0 2px 8px rgba(0, 0, 0, 0.3)',
-    '0 4px 12px rgba(0, 0, 0, 0.35)',
-    '0 6px 16px rgba(0, 0, 0, 0.4)',
-    '0 8px 24px rgba(0, 0, 0, 0.4)',
-    '0 12px 32px rgba(0, 0, 0, 0.45)',
-    '0 16px 40px rgba(0, 0, 0, 0.5)',
-    ...Array(18).fill('none'),
-  ] as any,
 
   components: {
     MuiCssBaseline: {
-      styleOverrides: `
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
-        :root {
-          --gradient-primary: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-          --gradient-cyan: linear-gradient(135deg, #06b6d4 0%, #10b981 100%);
-          --glass-bg: rgba(15, 23, 42, 0.8);
-          --glass-border: rgba(99, 102, 241, 0.15);
-        }
-        
-        body {
-          background: linear-gradient(180deg, #0a0f1a 0%, #0f172a 50%, #1e293b 100%);
-          min-height: 100vh;
-        }
-        
-        ::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: rgba(15, 23, 42, 0.5);
-        }
-        
-        ::-webkit-scrollbar-thumb {
-          background: rgba(99, 102, 241, 0.4);
-          border-radius: 3px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: rgba(99, 102, 241, 0.6);
-        }
-        
-        ::selection {
-          background: rgba(99, 102, 241, 0.4);
-        }
-      `,
-    },
-    
-    MuiButton: {
       styleOverrides: {
-        root: {
-          borderRadius: 12,
-          padding: '12px 28px',
-          fontSize: '0.9375rem',
-          fontWeight: 600,
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        // Keyboard focus must always be visible, and it uses the accent
+        // because "where am I" is a question about provenance too.
+        '*:focus-visible': {
+          outline: `2px solid ${palette.ochre}`,
+          outlineOffset: 2,
+          borderRadius: 3,
         },
-        contained: {
-          background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-          boxShadow: '0 4px 16px rgba(99, 102, 241, 0.3)',
-          '&:hover': {
-            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-            boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)',
-            transform: 'translateY(-2px)',
+        '::selection': {
+          background: alpha(palette.ochre, 0.3),
+          color: palette.vellum,
+        },
+        // Respect the OS setting rather than animating regardless.
+        '@media (prefers-reduced-motion: reduce)': {
+          '*': {
+            animationDuration: '0.01ms !important',
+            transitionDuration: '0.01ms !important',
+            scrollBehavior: 'auto !important',
           },
         },
-        outlined: {
-          borderColor: 'rgba(99, 102, 241, 0.5)',
-          borderWidth: 2,
-          '&:hover': {
-            borderWidth: 2,
-            borderColor: '#6366f1',
-            background: 'rgba(99, 102, 241, 0.1)',
-          },
+        body: { backgroundColor: palette.ink },
+        // Scrollbars that belong to the palette instead of the OS default.
+        '*::-webkit-scrollbar': { width: 10, height: 10 },
+        '*::-webkit-scrollbar-track': { background: palette.inkSunken },
+        '*::-webkit-scrollbar-thumb': {
+          background: palette.rule,
+          borderRadius: 5,
+          border: `2px solid ${palette.inkSunken}`,
         },
+        '*::-webkit-scrollbar-thumb:hover': { background: palette.graphite },
       },
     },
-    
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.7) 100%)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          border: '1px solid rgba(99, 102, 241, 0.1)',
-          borderRadius: 20,
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-          '&:hover': {
-            border: '1px solid rgba(99, 102, 241, 0.3)',
-            boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5), 0 0 40px rgba(99, 102, 241, 0.1)',
-            transform: 'translateY(-4px)',
-          },
-        },
-      },
-    },
-    
+
     MuiPaper: {
       styleOverrides: {
         root: {
-          background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.8) 100%)',
-          backdropFilter: 'blur(16px)',
-          borderRadius: 16,
+          backgroundImage: 'none', // MUI's default elevation tint
+          border: `1px solid ${palette.rule}`,
         },
       },
     },
-    
+
     MuiAppBar: {
       styleOverrides: {
         root: {
-          background: 'linear-gradient(180deg, rgba(10, 15, 26, 0.95) 0%, rgba(15, 23, 42, 0.9) 100%)',
-          backdropFilter: 'blur(20px)',
-          borderBottom: '1px solid rgba(99, 102, 241, 0.1)',
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.3)',
+          backgroundColor: palette.inkSunken,
+          borderBottom: `1px solid ${palette.rule}`,
+          boxShadow: 'none',
+          backgroundImage: 'none',
         },
       },
     },
-    
+
     MuiDrawer: {
       styleOverrides: {
         paper: {
-          background: 'linear-gradient(180deg, rgba(10, 15, 26, 0.98) 0%, rgba(15, 23, 42, 0.95) 100%)',
-          backdropFilter: 'blur(20px)',
-          borderRight: '1px solid rgba(99, 102, 241, 0.1)',
+          backgroundColor: palette.inkSunken,
+          borderRight: `1px solid ${palette.rule}`,
+          backgroundImage: 'none',
         },
       },
     },
-    
-    MuiTextField: {
+
+    MuiButton: {
+      defaultProps: { disableElevation: true },
       styleOverrides: {
-        root: {
-          '& .MuiOutlinedInput-root': {
-            borderRadius: 12,
-            background: 'rgba(15, 23, 42, 0.6)',
-            '& fieldset': {
-              borderColor: 'rgba(99, 102, 241, 0.2)',
-              borderWidth: 2,
-            },
-            '&:hover fieldset': {
-              borderColor: 'rgba(99, 102, 241, 0.4)',
-            },
-            '&.Mui-focused fieldset': {
-              borderColor: '#6366f1',
-              boxShadow: '0 0 20px rgba(99, 102, 241, 0.2)',
-            },
-          },
+        root: { borderRadius: 5, paddingInline: 14 },
+        containedPrimary: {
+          color: palette.ink,
+          '&:hover': { backgroundColor: palette.ochre, filter: 'brightness(1.08)' },
         },
+        outlined: { borderColor: palette.rule },
       },
     },
-    
+
     MuiChip: {
       styleOverrides: {
-        root: {
-          borderRadius: 8,
-          fontWeight: 500,
-          background: 'rgba(99, 102, 241, 0.15)',
-          border: '1px solid rgba(99, 102, 241, 0.3)',
-        },
-        filled: {
-          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0.3) 100%)',
-        },
+        root: { borderRadius: 4, fontWeight: 500 },
+        // Page numbers, scores and IDs all ride in chips, and all of them are
+        // things the document said.
+        labelSmall: { fontFamily: MONO, fontSize: '0.6875rem' },
+        outlined: { borderColor: palette.rule },
       },
     },
-    
-    MuiLinearProgress: {
-      styleOverrides: {
-        root: {
-          borderRadius: 8,
-          height: 8,
-          background: 'rgba(99, 102, 241, 0.15)',
-        },
-        bar: {
-          borderRadius: 8,
-          background: 'linear-gradient(90deg, #6366f1 0%, #06b6d4 100%)',
-        },
-      },
-    },
-    
+
     MuiListItemButton: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
-          margin: '4px 8px',
-          transition: 'all 0.3s ease',
-          '&:hover': {
-            background: 'rgba(99, 102, 241, 0.1)',
-          },
+          borderRadius: 5,
+          marginInline: 8,
           '&.Mui-selected': {
-            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.15) 100%)',
-            borderLeft: '3px solid #6366f1',
-            '&:hover': {
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(139, 92, 246, 0.2) 100%)',
-            },
+            backgroundColor: alpha(palette.ochre, 0.14),
+            '&:hover': { backgroundColor: alpha(palette.ochre, 0.2) },
           },
         },
       },
     },
-    
+
     MuiTooltip: {
       styleOverrides: {
         tooltip: {
-          background: 'rgba(15, 23, 42, 0.95)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(99, 102, 241, 0.2)',
-          borderRadius: 8,
-          padding: '8px 14px',
-          fontSize: '0.8125rem',
+          backgroundColor: palette.inkSunken,
+          border: `1px solid ${palette.rule}`,
+          fontSize: '0.75rem',
+          lineHeight: 1.5,
+          maxWidth: 320,
+          padding: '8px 10px',
         },
       },
     },
-    
-    MuiFab: {
+
+    MuiAlert: {
       styleOverrides: {
-        root: {
-          background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-          boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)',
-          '&:hover': {
-            background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-            boxShadow: '0 12px 32px rgba(99, 102, 241, 0.5), 0 0 40px rgba(99, 102, 241, 0.3)',
-          },
-        },
+        root: { border: `1px solid ${palette.rule}`, borderRadius: 5 },
+        standardWarning: { backgroundColor: alpha(palette.oxide, 0.12) },
+        standardSuccess: { backgroundColor: alpha(palette.moss, 0.12) },
+        standardInfo: { backgroundColor: alpha(palette.slate, 0.12) },
       },
     },
+
+    MuiOutlinedInput: {
+      styleOverrides: {
+        notchedOutline: { borderColor: palette.rule },
+      },
+    },
+
+    MuiLinearProgress: {
+      styleOverrides: {
+        root: { height: 3, borderRadius: 2, backgroundColor: palette.rule },
+      },
+    },
+
+    MuiDivider: { styleOverrides: { root: { borderColor: palette.rule } } },
   },
 });
 
+export { palette };
 export default theme;

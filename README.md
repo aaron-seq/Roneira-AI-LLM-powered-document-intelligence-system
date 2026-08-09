@@ -117,6 +117,15 @@ pip install sentence-transformers
 The first run downloads ~90MB. To make the service refuse to start rather than
 silently fall back, set `REQUIRE_REAL_EMBEDDINGS=true`.
 
+The same package supplies the cross-encoder used to rerank results, which is
+the single largest accuracy gain available here — recall@1 goes from 69% to
+77% and recall@3 from 92% to 100% on the bundled corpus. To see that on your
+own machine:
+
+```bash
+python scripts/eval_retrieval.py --compare
+```
+
 ### Reading scanned documents
 
 Scanned PDFs and image uploads (`.png`, `.jpg`, `.tiff`) are read with OCR.
@@ -262,6 +271,7 @@ ones that change behaviour most:
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `1000` / `200` | Retrieval granularity |
 | `RETRIEVAL_MIN_SCORE` | `0.15` | Raise to cut weak citations, lower to widen recall |
 | `HYBRID_RETRIEVAL` | `true` | `false` ranks by meaning alone, ignoring keyword overlap |
+| `RERANK_RESULTS` | `true` | Cross-encoder reranking. Measured: recall@1 69% → 77%. Costs an ~80MB download and ~100ms/query |
 | `ENABLE_OCR` / `TESSERACT_PATH` | `true` / auto | Read scanned pages; point at the binary if it is not on `PATH` |
 | `DATABASE_URL` | SQLite | PostgreSQL is required for more than one worker |
 

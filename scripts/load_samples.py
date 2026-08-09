@@ -128,9 +128,7 @@ def wait_for(
     """Poll until the document reaches a terminal state."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        body = client.get(
-            f"/api/documents/{document_id}/status", headers=headers
-        ).json()
+        body = client.get(f"/api/documents/{document_id}/status", headers=headers).json()
         if body["status"] in ("completed", "failed"):
             return body["status"]
         time.sleep(0.5)
@@ -184,7 +182,9 @@ def main() -> int:
                 ).json()
                 print(f"  {path.name}: {status} — {detail.get('error', '')}")
 
-        print(f"\n{completed} indexed, {failed} failed, {len(files) - len(queued)} rejected")
+        print(
+            f"\n{completed} indexed, {failed} failed, {len(files) - len(queued)} rejected"
+        )
 
         if completed:
             stats = client.get("/api/rag/stats", headers=headers).json()
@@ -198,7 +198,7 @@ def main() -> int:
                 )
 
             print("\nTry:")
-            print(f'  curl -X POST {args.url}/api/search \\')
+            print(f"  curl -X POST {args.url}/api/search \\")
             print(f'    -H "Authorization: Bearer {token[:16]}…" \\')
             print('    -H "Content-Type: application/json" \\')
             print("""    -d '{"query":"total amount due","top_k":3}'""")

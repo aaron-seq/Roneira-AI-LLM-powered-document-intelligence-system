@@ -104,9 +104,40 @@ improves precision but not recall: a chunk the vector search never returned
 cannot be recovered by re-ranking. A real BM25/FTS index over
 `document_chunks`, unioned with the vector hits, is the upgrade path.
 
-`SearchResult.score` keeps the vector similarity even after re-ranking, so
+Finally, a **cross-encoder** reads the question and each surviving passage
+*together* and scores the pair. A bi-encoder cannot do this: the passage vector
+is computed before any question exists, so it cannot emphasise the part a
+particular question is about. Cross-encoders are far too slow to run over a
+corpus and exactly right for reordering a shortlist.
+
+`SearchResult.score` keeps the vector similarity through all of this, so
 `RETRIEVAL_MIN_SCORE` keeps its meaning and a citation still reports a
-comparable number. Set `HYBRID_RETRIEVAL=false` to rank on similarity alone.
+comparable number. Cross-encoder outputs are unbounded logits, not
+similarities; writing them into `score` would quietly break both.
+
+### Measured
+
+`scripts/eval_retrieval.py` asks 13 paraphrased questions whose correct source
+document is known, against the whole 22-document sample corpus. The questions
+avoid the documents' own wording — "how much do we owe Quantum Industrial
+Systems" has to reach "TOTAL DUE" — because matching a shared noun is not
+evidence that retrieval works.
+
+| Ranking | recall@1 | recall@3 | MRR |
+|---|---|---|---|
+| Semantic only | 62% | 77% | 0.699 |
+| + keyword (hybrid) | 69% | 92% | 0.827 |
+| + cross-encoder | 77% | 100% | 0.859 |
+| Both | 77% | 100% | 0.859 |
+
+Two things worth reading off that table. The cross-encoder runs last and
+reorders everything, so **hybrid adds nothing on top of it** — the last two
+rows are identical. Hybrid earns its place as the fallback: without
+sentence-transformers there is no cross-encoder, and hybrid is then the
+difference between 69% and 62%.
+
+Set `RERANK_RESULTS=false` to skip the cross-encoder, or `HYBRID_RETRIEVAL=false`
+to rank on similarity alone.
 
 PDF extraction emits `--- Page N ---` markers, and
 `retrieval_service._page_for_offset` maps a chunk's character offset back to
