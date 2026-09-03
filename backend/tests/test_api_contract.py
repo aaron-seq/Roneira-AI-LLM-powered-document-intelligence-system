@@ -96,6 +96,48 @@ class TestSecurityHeaders:
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
 
 
+class TestInteractiveDocs:
+    """The docs page is the first thing the README tells a reader to open.
+
+    ``default-src 'none'`` applied to every response blocked Swagger UI's own
+    script and stylesheet, so /api/docs returned 200 and rendered a blank
+    page. Nothing failed; there was simply nothing to see.
+    """
+
+    def test_docs_are_served(self, client):
+        response = client.get("/api/docs")
+        assert response.status_code == 200
+        assert "swagger-ui" in response.text
+
+    def test_the_docs_csp_permits_the_assets_the_page_loads(self, client):
+        csp = client.get("/api/docs").headers["Content-Security-Policy"]
+        assert "cdn.jsdelivr.net" in csp
+        # Still locked down everywhere it does not need to be open.
+        assert "default-src 'none'" in csp
+        assert "frame-ancestors 'none'" in csp
+
+    def test_the_relaxation_does_not_leak_to_the_rest_of_the_api(self, client):
+        csp = client.get("/api/health").headers["Content-Security-Policy"]
+        assert "cdn.jsdelivr.net" not in csp
+
+
+class TestOpenAPISchema:
+    def test_every_operation_is_filed_under_exactly_one_tag(self, client):
+        """Routers applied an include-level tag on top of each route's own.
+
+        FastAPI appends rather than overrides, so eight endpoints carried two
+        tags and were listed twice in /api/docs under different headings.
+        """
+        schema = client.get("/api/openapi.json").json()
+        multiply_tagged = {
+            f"{method.upper()} {path}": operation["tags"]
+            for path, methods in schema["paths"].items()
+            for method, operation in methods.items()
+            if len(operation.get("tags", [])) > 1
+        }
+        assert not multiply_tagged
+
+
 class TestErrorEnvelope:
     def test_unknown_paths_return_404(self, client):
         assert client.get("/api/no-such-endpoint").status_code == 404

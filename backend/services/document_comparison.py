@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from backend.common.helpers import PAGE_MARKER
 from backend.services.retrieval_service import _page_for_offset, _page_offsets
 
 #: Changes returned per comparison. A rewritten hundred-page contract would
@@ -85,7 +86,7 @@ def split_paragraphs(content: str) -> List[Paragraph]:
         position = start + len(block)
 
         # Page markers are positioning devices, not content.
-        body = _normalise(re.sub(r"^--- Page \d+ ---$", "", block, flags=re.MULTILINE))
+        body = _normalise(PAGE_MARKER.sub("", block))
         if len(body) < MIN_PARAGRAPH_CHARS:
             continue
 

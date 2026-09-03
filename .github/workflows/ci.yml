@@ -23,19 +23,30 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+  # Vite 7 requires ^20.19 || >=22.12; 22 is the current LTS.
+  NODE_VERSION: "22"
 
 jobs:
   # ---------------------------------------------------------------- backend
   backend-quality:
-    name: Backend lint & types
+    name: Backend lint & types (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The README promises "Python 3.11+". It was not true: asyncpg 0.29
+        # and numpy<2 ship no CPython 3.13 wheels, so `pip install -r
+        # requirements.txt` tried to compile them and failed on any machine
+        # without a C toolchain. Nothing in CI noticed, because CI only ever
+        # installed on 3.11. This matrix is that missing check — it costs one
+        # install per version and it is the job that catches the next one.
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install dependencies
@@ -87,6 +98,16 @@ jobs:
           SECRET_KEY: ci-secret-key-not-used-outside-github-actions-0123456789
           DATABASE_URL: sqlite+aiosqlite:///./ci-test.db
         run: pytest -v
+
+      # `tests/` covers the research modules under `src/` (data catalog,
+      # synthetic data, ontology, evaluation). They were outside testpaths and
+      # so had never run in CI — 131 tests that could rot unnoticed. Coverage
+      # is disabled here because the gate is calibrated for `backend/`.
+      - name: Run the src/ research module tests
+        env:
+          ENVIRONMENT: test
+          SECRET_KEY: ci-secret-key-not-used-outside-github-actions-0123456789
+        run: pytest tests/ -v --no-cov
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4

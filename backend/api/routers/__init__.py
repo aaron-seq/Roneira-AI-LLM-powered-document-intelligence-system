@@ -10,7 +10,11 @@ api_router = APIRouter()
 
 api_router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(documents_router, prefix="/documents", tags=["Documents"])
-api_router.include_router(
-    chat_router, tags=["Chat"]
-)  # Prefix handled in sub-routes for chat/search distinction
-api_router.include_router(system_router, tags=["System"])
+
+# No router-level tag for these two. FastAPI *appends* an include-level tag to
+# whatever a route declares, so a route tagged "RAG" inside a router included
+# as "Chat" carried both — and /api/docs listed the same eight endpoints twice,
+# under two headings. Their routes tag themselves; the prefix likewise lives on
+# the individual routes so /chat and /search can sit side by side.
+api_router.include_router(chat_router)
+api_router.include_router(system_router)

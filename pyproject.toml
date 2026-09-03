@@ -71,7 +71,17 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.11"
+# `python_version` is deliberately not pinned. Setting it to "3.11" fixed the
+# syntax level mypy would accept *anywhere*, including inside third-party
+# stubs — and NumPy 2.5 (which pip installs only on Python 3.12+) writes PEP
+# 695 `type X = ...` aliases in its own `.pyi`. mypy rejected the stub itself:
+#
+#   numpy/__init__.pyi:737: error: Type statement is only supported in Python
+#   3.12 and greater  [syntax]
+#
+# Unset, mypy targets the interpreter it runs under. The CI matrix still holds
+# the 3.11 floor for our own code, because the 3.11 job type-checks against
+# 3.11 semantics.
 warn_unused_configs = true
 ignore_missing_imports = true
 no_strict_optional = true

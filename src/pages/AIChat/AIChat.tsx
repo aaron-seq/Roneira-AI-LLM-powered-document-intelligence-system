@@ -108,7 +108,6 @@ const AIChat = () => {
         try {
             // Correct endpoint for document list
             const response = await apiClient.get('/documents?limit=100');
-            console.log('Fetched documents:', response.data);
             if (response.data && response.data.documents) {
                 setDocuments(response.data.documents);
             }
@@ -218,6 +217,9 @@ const AIChat = () => {
                 ));
             }
         } catch (error) {
+            // The user is shown a generic message; without this the cause was
+            // discarded entirely and the failure was undiagnosable.
+            console.error('Chat request failed:', error);
             setMessages(prev => prev.map(msg =>
                 msg.id === assistantMessage.id
                     ? { ...msg, content: 'An error occurred while processing your request.', isLoading: false }
@@ -277,8 +279,9 @@ const AIChat = () => {
                 ));
             }
         } catch (error) {
-            setMessages(prev => prev.map(msg => 
-                msg.id === messageId 
+            console.error('Regenerating the answer failed:', error);
+            setMessages(prev => prev.map(msg =>
+                msg.id === messageId
                     ? { ...msg, content: 'An error occurred while regenerating.', isLoading: false }
                     : msg
             ));

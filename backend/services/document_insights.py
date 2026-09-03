@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
+from backend.common.helpers import strip_page_markers
 from backend.services.entity_extraction_service import EntityType, PatternEntityExtractor
 from backend.services.pii_detection_service import PIIDetector
 from backend.services.summarization_service import ExtractiveSummarizer
@@ -102,12 +103,16 @@ def summarise(text: str, sentences: int = 3) -> str:
     Extractive, so every word is the document's own. Used when the LLM cannot
     be reached; an abstractive summary reads better but is not available then,
     and inventing one is not an option.
+
+    The ``--- Page N ---`` separators are stripped first. They are a retrieval
+    positioning device, and leaving them in put "--- Page 1 ---" at the top of
+    every summary shown in the UI and every Markdown export.
     """
     try:
         # Returns a plain string, despite the SummaryResult dataclass defined
         # alongside it — that is only used by the abstractive path.
         return _summariser.summarize(
-            text[:MAX_ANALYSIS_CHARS], num_sentences=sentences
+            strip_page_markers(text)[:MAX_ANALYSIS_CHARS], num_sentences=sentences
         ).strip()
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Extractive summarisation failed: %s", exc)

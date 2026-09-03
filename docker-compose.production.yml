@@ -1,59 +1,68 @@
-version: '3.8'
+# Production stack.
+#
+#   docker compose -f docker-compose.production.yml up -d
+#
+# The previous version of this file could not have started the application.
+# Every one of these was independently fatal:
+#
+#   - DATABASE_URL used `sqlite://`, a *synchronous* driver. SQLAlchemy's async
+#     engine rejects it at startup with "the asyncio extension requires an
+#     async driver". The scheme must be `sqlite+aiosqlite://`.
+#   - The healthcheck polled `/health`. Every route is mounted under `/api`,
+#     so it 404'd and the container was permanently unhealthy.
+#   - It started a Redis container and passed REDIS_URL. Nothing in `backend/`
+#     imports redis; it was a service to run, patch and pay for that no code
+#     could talk to.
+#   - It passed four AZURE_* variables. There is no Azure code path and
+#     `backend/core/config.py` does not define those fields, so pydantic
+#     ignored them — an operator could set an endpoint and see no effect.
+#   - It mounted no volume for the vector store, so the entire index was lost
+#     on every restart while the documents that built it survived.
 
 services:
-  app:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
       target: production
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
     environment:
-      - ENVIRONMENT=production
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/documents.db}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - SECRET_KEY=${SECRET_KEY}
-      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-      - AZURE_DOCUMENT_INTELLIGENCE_KEY=${AZURE_DOCUMENT_INTELLIGENCE_KEY}
-      - AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=${AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT}
+      ENVIRONMENT: production
+      DEBUG: "false"
+      # Async driver. PostgreSQL is required for more than one worker; SQLite
+      # is single-writer and WORKERS stays at 1 with it.
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////app/data/documents.db}
+      # Production refuses to start with the placeholder key, with DEBUG on,
+      # or with "*" for hosts or origins. Set all three before deploying.
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set for production}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS must be set, wildcards are refused}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS must be set, wildcards are refused}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      UPLOAD_DIRECTORY: /app/uploads
+      VECTOR_STORE_PATH: /app/chroma_db
+      WORKERS: ${WORKERS:-1}
     volumes:
       - app_data:/app/data
       - upload_data:/app/uploads
-      - log_data:/app/logs
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
+      # Without this the index is rebuilt-from-nothing on every restart while
+      # the documents stay in the database: uploads present, search empty.
+      - vector_data:/app/chroma_db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # Liveness only. A database blip should not make the orchestrator kill
+      # an otherwise healthy container.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
+      # First boot downloads the ~90MB embedding model before serving.
+      start_period: 180s
 
 volumes:
   app_data:
-    driver: local
   upload_data:
-    driver: local
-  log_data:
-    driver: local
-  redis_data:
-    driver: local
-
-networks:
-  default:
-    driver: bridge
+  vector_data:

@@ -44,6 +44,24 @@ SECURITY_HEADERS = {
     ),
 }
 
+#: The one exception to "never its own HTML". FastAPI serves Swagger UI and
+#: ReDoc as HTML that pulls its script and stylesheet from jsdelivr, so the
+#: blanket ``default-src 'none'`` above blocked both and ``/api/docs`` — the
+#: first thing the README tells you to open — rendered as an empty page.
+#: These two paths get a CSP scoped to exactly what those pages load.
+_DOCS_CSP = (
+    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; "
+    "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+    "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; "
+    "font-src 'self' https://cdn.jsdelivr.net; "
+    "connect-src 'self'; worker-src 'self' blob:"
+)
+
+#: Suffixes of the documentation routes. Matched against the path so a
+#: deployment that remounts the app under a prefix keeps working.
+_DOCS_PATH_SUFFIXES = ("/docs", "/redoc", "/docs/oauth2-redirect")
+
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
     """Attach a correlation ID to every request, log, and response.
@@ -106,6 +124,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         for header, value in SECURITY_HEADERS.items():
             response.headers.setdefault(header, value)
+        if request.url.path.rstrip("/").endswith(_DOCS_PATH_SUFFIXES):
+            response.headers["Content-Security-Policy"] = _DOCS_CSP
         if self.hsts:
             response.headers.setdefault(
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains"

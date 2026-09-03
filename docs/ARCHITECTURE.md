@@ -328,7 +328,47 @@ Railway or Render deploy ran the dead tree. Both now start `backend.main:app`.
 `src/` still holds research and demo scripts (data cataloguing, ontology,
 synthetic data, evaluation) with their own tests under `tests/`. They are not
 imported by `backend.main` and are excluded from the default `pytest` run;
-`pytest tests/` opts into them.
+`pytest tests/` opts into them, and CI now runs that too — 130 tests that
+previously sat outside every automated check.
+
+---
+
+## Dependencies
+
+The rule is narrow: **if nothing in `backend/`, `scripts/` or the test suite
+imports it, it does not belong in `requirements.txt`.** An unused pin is not
+free. It is a supply-chain surface, an install cost, and — the reason this
+became urgent — a constraint on the resolver.
+
+`requirements.txt` had accumulated twenty-two packages nothing imported: the
+whole LangChain stack (`langchain`, `-openai`, `-community`, `-core`), the
+`openai` SDK, `tiktoken`, `redis`, `alembic`, `scikit-learn`, `selenium`,
+`hypothesis`, `mutmut`, `debugpy`, `Faker`, `typer`, `click`, `orjson`,
+`websockets`, a duplicate `structlog` entry, and `black`/`isort`/`flake8`
+three releases after ruff replaced them.
+
+That was not merely untidy. `langchain` pinned `numpy<2`, and NumPy 1.26 has
+no CPython 3.13 wheels — so a dependency **no line of code imported** was what
+capped the project at Python 3.12 and made `pip install -r requirements.txt`
+fail on a current interpreter. Deleting it was the fix; upgrading it would
+have been solving the wrong problem.
+
+Two further notes on what remains:
+
+- **Vector store.** Chroma is embedded via `PersistentClient` — in-process, no
+  HTTP listener, no auth provider, no tenants. This is why the four open
+  chromadb advisories, all of which target its *server*, are not reachable
+  here. `requirements.txt` records the reasoning; re-check when a fixed
+  release exists.
+- **JWTs.** PyJWT, not python-jose. The service signs with HS256 and never
+  executes an ECDSA path, but python-jose pulled in `ecdsa`, whose P-256
+  timing advisory has no fixed version and never will. Three lines in
+  `auth_service.py` removed a permanent audit finding.
+
+The same rule applies to the frontend: `framer-motion`, `socket.io-client`,
+`react-hook-form` and `@playwright/test` were declared and never imported, and
+`uuid` existed to generate one request ID that `crypto.randomUUID()` already
+provides natively.
 
 ---
 

@@ -30,16 +30,30 @@ except ImportError:  # pragma: no cover - optional dependency
     pdfplumber = None
 
 try:
-    import PyPDF2
-except ImportError:  # pragma: no cover - optional dependency
-    PyPDF2 = None
-
-try:
     from docx import Document as DocxDocument
 except ImportError:  # pragma: no cover - optional dependency
     DocxDocument = None
 
 logger = logging.getLogger(__name__)
+
+#: The page separator this module writes between pages. Retrieval maps chunk
+#: offsets back to these to turn a hit into a citation a reader can check
+#: ("page 7 of the contract"). It is a positioning device, never content, so
+#: anything shown to a user or sent to a model must strip it first — see
+#: ``strip_page_markers``. Defined here, next to the only code that emits it,
+#: because three modules had drifted their own copies of this pattern.
+PAGE_MARKER = re.compile(r"^--- Page (\d+) ---$", re.MULTILINE)
+
+
+def format_page_marker(number: int) -> str:
+    """Render the separator that precedes page ``number``'s body."""
+    return f"--- Page {number} ---"
+
+
+def strip_page_markers(text: str) -> str:
+    """Remove page separators from text shown to users or sent to a model."""
+    return re.sub(r"\n{2,}", "\n\n", PAGE_MARKER.sub("", text)).strip()
+
 
 #: Extensions handled by a text extractor.
 TEXT_EXTENSIONS = {".txt", ".md", ".csv"}
@@ -122,7 +136,7 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
     Page markers are emitted so retrieval can map a chunk back to a page
     number and cite it.
     """
-    if pdfplumber is None and PyPDF2 is None:
+    if pdfplumber is None:
         raise TextExtractionError(
             "No PDF library is installed on the server. "
             "Install pdfplumber to enable PDF support."
@@ -135,36 +149,20 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
     failed_pages = []
 
     try:
-        if pdfplumber is not None:
-            with pdfplumber.open(file_path) as pdf:
-                metadata["pages"] = len(pdf.pages)
-                for page_number, page in enumerate(pdf.pages, start=1):
-                    try:
-                        pages[page_number] = page.extract_text() or ""
-                    except Exception as exc:
-                        # One unreadable page should not lose the other 99.
-                        logger.warning(
-                            "Page %s of %s could not be read: %s",
-                            page_number,
-                            file_path,
-                            exc,
-                        )
-                        failed_pages.append(page_number)
-        else:
-            with open(file_path, "rb") as handle:
-                reader = PyPDF2.PdfReader(handle)
-                metadata["pages"] = len(reader.pages)
-                for page_number, page in enumerate(reader.pages, start=1):
-                    try:
-                        pages[page_number] = page.extract_text() or ""
-                    except Exception as exc:
-                        logger.warning(
-                            "Page %s of %s could not be read: %s",
-                            page_number,
-                            file_path,
-                            exc,
-                        )
-                        failed_pages.append(page_number)
+        with pdfplumber.open(file_path) as pdf:
+            metadata["pages"] = len(pdf.pages)
+            for page_number, page in enumerate(pdf.pages, start=1):
+                try:
+                    pages[page_number] = page.extract_text() or ""
+                except Exception as exc:
+                    # One unreadable page should not lose the other 99.
+                    logger.warning(
+                        "Page %s of %s could not be read: %s",
+                        page_number,
+                        file_path,
+                        exc,
+                    )
+                    failed_pages.append(page_number)
 
     except TextExtractionError:
         raise
@@ -199,7 +197,7 @@ async def _extract_from_pdf(file_path: str) -> Tuple[str, Dict[str, Any]]:
 
     text = _normalise_whitespace(
         "\n".join(
-            f"--- Page {number} ---\n{body}"
+            f"{format_page_marker(number)}\n{body}"
             for number, body in sorted(pages.items())
             if body.strip()
         )
@@ -236,7 +234,7 @@ async def _extract_from_image(file_path: str) -> Tuple[str, Dict[str, Any]]:
 
     # Page 1 marker keeps citations uniform with PDFs, so an image cites as
     # "page 1" rather than as a special case everywhere downstream.
-    return f"--- Page 1 ---\n{text}", {
+    return f"{format_page_marker(1)}\n{text}", {
         "pages": 1,
         "word_count": len(text.split()),
         "ocr_pages": [1],

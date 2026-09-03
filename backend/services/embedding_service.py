@@ -160,7 +160,14 @@ class EmbeddingService:
             self.model = await loop.run_in_executor(
                 None, lambda: SentenceTransformer(self.model_name)
             )
-            self._dimension = self.model.get_sentence_embedding_dimension()
+            # Renamed in sentence-transformers 6.0; the old name still works
+            # but warns. Fall back so a 2.x/3.x install keeps loading.
+            measure = getattr(
+                self.model,
+                "get_embedding_dimension",
+                self.model.get_sentence_embedding_dimension,
+            )
+            self._dimension = measure()
             self.is_initialized = True
             self._degraded_reason = None
             logger.info(

@@ -120,15 +120,20 @@ and did not copy `backend/` at all.
 
 ## Platform notes
 
-`deployment/` holds starting configurations for Railway, Render and Vercel.
-Two things to know before using them:
+`deployment/` holds starting configurations for Railway and Render. Both run
+`uvicorn backend.main:app`, health-check `/api/health/live`, and are pinned to
+one instance because the vector store and uploaded files live on the
+instance's own disk — a second replica would answer from an empty index.
 
-- They were written for the earlier `app.main:app` entrypoint. The command is
-  now `gunicorn backend.main:app --config gunicorn.conf.py`.
-- **Vercel's serverless model does not fit this workload.** Document processing
-  runs as a background task after the response is sent, and serverless
-  functions are frozen once they respond. Uploads would be accepted and never
-  processed. Use a platform with long-running processes and persistent disk.
+**There is no Vercel config, deliberately.** One used to be here and could
+never have worked: it pointed at the deleted `app/main.py` and passed Azure
+and Redis variables the application does not read. Beyond that the platform is
+the wrong shape for this workload — document processing runs as a background
+task *after* the response is sent, and a serverless function is frozen once it
+responds, so uploads would be accepted and never processed. There is also no
+persistent disk for the vector store, and the sentence-transformers stack
+alone exceeds the bundle limit. Removing it was the honest fix; a config that
+looks supported but cannot run is worse than none.
 
 Any platform you choose needs: persistent volumes, an environment where the
 process outlives the request, and outbound access to Ollama if you want

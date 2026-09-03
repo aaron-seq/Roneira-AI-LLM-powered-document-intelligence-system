@@ -106,8 +106,9 @@ site/
 # FastAPI/Uvicorn
 .uvicorn/
 
-# Docker
-.dockerignore
+# (`.dockerignore` was listed here, which meant the file could be written but
+# never committed — so images were built with the whole working tree as
+# context. It is tracked deliberately.)
 
 # Node.js (for frontend)
 node_modules/
