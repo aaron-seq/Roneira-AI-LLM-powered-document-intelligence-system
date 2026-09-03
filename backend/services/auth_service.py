@@ -12,7 +12,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 from passlib.context import CryptContext
 
 from backend.core.config import get_settings
@@ -120,7 +121,7 @@ class AuthService:
                 # token signed with "none" or with a different scheme.
                 algorithms=[self.settings.algorithm],
             )
-        except JWTError as exc:
+        except PyJWTError as exc:
             logger.debug("Token verification failed: %s", exc)
             return None
 
