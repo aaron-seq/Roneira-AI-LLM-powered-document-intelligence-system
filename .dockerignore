@@ -1,0 +1,57 @@
+# Files never needed inside an image.
+#
+# There was no .dockerignore, and .gitignore listed `.dockerignore` itself —
+# so one could be written but never committed. Without it `docker build` sent
+# the whole working tree to the daemon (node_modules, .venv, .git, the sample
+# corpus) and `COPY . .` in Dockerfile.frontend baked node_modules into the
+# builder stage.
+
+.git
+.github
+.gitignore
+
+# Dependency trees: reinstalled inside the image from the lockfiles.
+node_modules
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+*.egg-info
+
+# Local runtime state. Copying a host SQLite file or vector index into an
+# image ships someone's documents inside the artefact.
+uploads/
+processed/
+chroma_db/
+logs/
+*.db
+*.sqlite3
+*.log
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Build output and test artefacts
+dist
+coverage.xml
+.coverage
+htmlcov
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Documentation and samples: not needed at runtime. The Python image copies
+# only backend/; this keeps them out of the build context entirely.
+docs/
+CONTRIBUTING.md
+LICENSE
+README.md
+
+# Editor and OS noise
+.vscode
+.idea
+.DS_Store
+Thumbs.db
