@@ -327,8 +327,9 @@ modules that are present but not wired in  is in
 ## Development
 
 ```bash
-pytest                              # 183 tests, 70% coverage gate
+pytest                              # 245 tests, 70% coverage gate
 pytest backend/tests/test_auth.py   # one file
+pytest tests/ --no-cov              # 130 tests for the src/ research modules
 ruff check backend/ && ruff format backend/
 mypy backend/core backend/api backend/repositories --ignore-missing-imports
 
@@ -338,6 +339,11 @@ npm run type-check && npm run lint && npm run build
 CI runs all of the above plus a smoke job that boots the application and
 drives a document from upload through to a successful search  the check that
 would have caught the import error which made the service unstartable.
+
+Dependencies are installed on Python 3.11, 3.12 and 3.13 in CI. That matrix
+exists because "Python 3.11+" was claimed but untrue: two pinned packages had
+no 3.13 wheels, so `pip install -r requirements.txt` failed outright on a
+current interpreter and nothing in CI noticed.
 
 Contribution guidelines: [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -385,13 +391,10 @@ Ordered by how much each would improve the product for a real user.
   migrations directory, so a new column reaches a fresh database and never an
   existing one. Adding Alembic is the prerequisite, not the tagging UI.
 
-- **PII detection on ingest.** `pii_detection_service.py` is written and
-  unused. Flagging PII at upload, with the option to redact before indexing,
-  is what makes this deployable in regulated settings.
-- **Hybrid retrieval.** Combine keyword (BM25) with vector scores; each fails
-  on cases the other handles.
-- **Reranking.** A cross-encoder over the top 20 candidates measurably
-  improves citation precision.
+- **Redaction before indexing.** PII is already detected on every upload and
+  reported on the document; the option to redact it *before* the text is
+  chunked and embedded is what would make this deployable in regulated
+  settings.
 - **A real user store.** Registration, password reset, and roles backed by
   the database rather than a dict.
 
