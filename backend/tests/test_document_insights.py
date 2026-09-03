@@ -105,6 +105,35 @@ class TestExtractiveSummary:
     def test_short_text_is_returned_rather_than_mangled(self):
         assert summarise("One short line about revenue.") is not None
 
+    def test_page_markers_do_not_reach_the_summary(self):
+        """``--- Page N ---`` is a retrieval device, not content.
+
+        The extractor writes these separators so a chunk can be mapped back to
+        a page and cited. Retrieval and comparison both strip them; the
+        summary path did not, so every summary shown in the UI and every
+        Markdown export opened with "--- Page 1 ---".
+        """
+        paginated = (
+            "--- Page 1 ---\n"
+            "The quarterly revenue reached four point two million dollars.\n"
+            "--- Page 2 ---\n"
+            "Customer churn fell for the third consecutive quarter.\n"
+        )
+
+        summary = summarise(paginated, sentences=2)
+
+        assert "--- Page" not in summary
+        assert "revenue" in summary or "churn" in summary
+
+    def test_a_short_paginated_document_is_still_cleaned(self):
+        """The short-text path returns the text as-is; it must still be clean.
+
+        This is the case the bug actually showed up in: a one-page invoice has
+        too few sentences to rank, so the summariser hands the text straight
+        back — markers included.
+        """
+        assert "--- Page" not in summarise("--- Page 1 ---\nTotal due: $8,385.00.")
+
 
 class TestInsightsShape:
     def test_build_insights_returns_both_sections(self):
