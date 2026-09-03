@@ -36,7 +36,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/chat", response_model=ChatAPIResponse, summary="Ask a grounded question")
+@router.post(
+    "/chat",
+    response_model=ChatAPIResponse,
+    tags=["Chat"],
+    summary="Ask a grounded question",
+)
 async def chat_completion(
     request: ChatRequest,
     user: CurrentUser = Depends(get_current_user),
@@ -172,6 +177,7 @@ async def index_document_for_rag(
 @router.get(
     "/memory/{session_id}",
     response_model=ConversationHistoryResponse,
+    tags=["Chat"],
     summary="Read conversation history",
 )
 async def get_conversation_history(
@@ -188,7 +194,9 @@ async def get_conversation_history(
     )
 
 
-@router.delete("/memory/{session_id}", summary="Clear conversation history")
+@router.delete(
+    "/memory/{session_id}", tags=["Chat"], summary="Clear conversation history"
+)
 async def clear_conversation(
     session_id: str,
     user: CurrentUser = Depends(get_current_user),
