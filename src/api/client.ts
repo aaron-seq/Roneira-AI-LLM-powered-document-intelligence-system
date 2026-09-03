@@ -1,5 +1,4 @@
 import axios, { AxiosError } from 'axios';
-import { v4 as uuidv4 } from 'uuid';
 
 // Environment variable input
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -37,7 +36,9 @@ apiClient.interceptors.request.use((config) => {
     // 2. Correlation ID for Telemetry
     // WHY: Propagating a request ID allows us to trace a specific user action 
     // from the frontend button click all the way to the backend database query.
-    const requestId = uuidv4();
+    // crypto.randomUUID is native in every browser this app supports, so the
+    // `uuid` package earned nothing but an install and a CVE.
+    const requestId = crypto.randomUUID();
     config.headers['X-Request-ID'] = requestId;
     config.headers['X-Correlation-ID'] = requestId;
 
