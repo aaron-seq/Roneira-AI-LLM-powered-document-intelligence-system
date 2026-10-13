@@ -37,14 +37,27 @@ Wire these to the right things; they are not interchangeable.
 
 | Endpoint | Use for | Behaviour |
 |---|---|---|
-| `/api/health/live` | Liveness probe | 200 while the process runs. **Does not touch the database** — a transient DB outage must not trigger a restart loop. |
-| `/api/health/ready` | Readiness probe | 503 when the database is unreachable, so traffic stops arriving. |
-| `/api/health` | Dashboards and alerting | Per-component detail; `degraded` when serving with reduced capability. |
+| `/api/health/live` | Liveness probe | 200 as soon as the process is up, ~1.5s from start. **Touches neither the database nor the embedding model** — a transient DB outage must not trigger a restart loop, and a model download must not look like a dead container. |
+| `/api/health/ready` | Readiness probe, and anything that routes traffic | 503 when the database is unreachable **or the embedding model is still loading**, so traffic stops arriving. |
+| `/api/health` | Dashboards and alerting | Per-component detail; `starting`, `degraded` or `unhealthy`. |
+
+**Route traffic on readiness, not liveness.** The embedding model loads in a
+background task so the server can start answering immediately, and a search
+arriving before it finishes waits for it — a slow request, not a failed one,
+but not something to send traffic into while another replica is ready. The
+platform configs in `deployment/` use `/api/health/ready` for this reason;
+Docker's own `HEALTHCHECK` uses liveness, because there its job is to decide
+whether to restart the container.
+
+Readiness resolves either way. A model that cannot be downloaded at all leaves
+the service keyword-only and **ready** rather than failing readiness forever,
+so a deployment with no model access still passes its health check.
 
 `/api/health` reporting `degraded` is a real signal, not noise. It means the
 service is answering requests while something is wrong — usually a missing
 embedding model (search is keyword-only) or an unreachable LLM (no summaries).
-Both are invisible to a plain up/down check.
+Both are invisible to a plain up/down check. `starting` is distinct and not a
+cause for alarm: nothing is missing, the model is still arriving.
 
 ---
 
@@ -205,11 +218,45 @@ asyncio.run(main())
 
 ## Database migrations
 
-Alembic is in `requirements.txt` but no migration chain exists yet; the schema
-is created with `Base.metadata.create_all()` at startup. That is fine for a
-first deployment and **not** fine for the second: `create_all` adds missing
-tables but never alters existing ones.
+The schema is managed by Alembic, in `migrations/`. By default the application
+applies any pending revisions during startup, so a single-container deployment
+needs no extra step.
 
-Before your first schema change, initialise Alembic and generate a baseline
-against the current models. Until then, treat schema changes as requiring a
-manual migration.
+**For anything with more than one replica, turn that off:**
+
+```bash
+DB_AUTO_MIGRATE=false
+```
+
+and run migrations as their own deploy step, before the new version starts:
+
+```bash
+alembic upgrade head
+```
+
+A schema change is then a visible, ordered action with a log and an exit code,
+rather than something applied by whichever replica happens to boot first. With
+`DB_AUTO_MIGRATE=false`, startup checks that the tables exist and refuses to
+start if they do not — naming the missing ones — instead of failing later
+inside a request.
+
+### Upgrading from a release before migrations existed
+
+Nothing to do. The schema used to be created with `Base.metadata.create_all()`,
+which leaves a database with all the tables and no `alembic_version` row.
+Startup detects exactly that and stamps it at the baseline revision rather than
+replaying the baseline against tables that already exist. Your data is
+untouched.
+
+### Reviewing a migration before it runs
+
+```bash
+alembic upgrade head --sql    # print the SQL instead of executing it
+alembic current               # which revision this database is at
+alembic history --verbose     # what exists
+alembic downgrade -1          # step back one revision
+```
+
+`migrations/README.md` covers writing one. CI runs `alembic check`, which fails
+when the models describe a schema the migrations do not produce — that is what
+stops a model change from being merged without its migration.

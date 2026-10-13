@@ -41,6 +41,11 @@ document_processor = DocumentProcessorService(retrieval_service=retrieval_servic
 chat_service       = ChatService(retrieval_service=retrieval_service)
 ```
 
+Both also take the *initialised* instance: they call
+`retrieval_service.ensure_store_ready()`, never `initialize()`. Calling the
+full one here would load the embedding model, undoing the deferral the
+container chose on the line before — see "Startup sequence" below.
+
 `DocumentProcessorService` and `ChatService` previously each constructed their
 own `RetrievalService`, which meant each got its own `EmbeddingService` and its
 own ChromaDB client. Documents indexed at upload went into one vector store;
@@ -48,6 +53,40 @@ chat searched a different, empty one. Every RAG answer returned zero sources
 while every API call reported success. **If you change this wiring, that bug
 comes back** — `test_document_workflow.py::TestRetrievalSeesUploadedDocuments`
 is the guard.
+
+---
+
+### Startup sequence
+
+The order matters, and it is the result of measurement rather than taste:
+
+1. **Import.** `sentence_transformers` is imported lazily, not at module
+   scope. Importing it pulls in torch and transformers and costs ~4s, and that
+   was being paid during `import backend.main` — before uvicorn had even
+   constructed the application, let alone run its lifespan. No amount of
+   deferring the model *load* could reach it.
+2. **Lifespan.** Database (migrations), then the vector store, then the
+   services. All cheap and local: ~0.6s.
+3. **Serving.** The lifespan returns, uvicorn accepts connections, and
+   `/api/health/live` answers — about **1.5s** from process start, against
+   7.4s before.
+4. **Model load.** Started *last*, as a background task, because a task only
+   runs when the loop gets control: one created earlier is executed during the
+   lifespan's own awaits (the LLM availability checks), and since the import
+   that follows is CPU-bound Python holding the GIL, the lifespan then waits
+   for most of it anyway. Created before those checks, `initialize_services`
+   took 5.48s; created after them, ~0.6s.
+
+While the load is in flight, `/api/health/ready` returns 503 and a request
+that needs embeddings **waits** rather than falling back to keyword matching.
+That is not caution: a lexical vector and a model vector are points in
+unrelated spaces, so a cosine similarity between them is meaningless. Indexing
+with one and querying with the other would not degrade retrieval, it would
+corrupt it — silently, since every score still comes back a plausible number.
+
+`REQUIRE_REAL_EMBEDDINGS=true` loads inline instead. That setting exists so a
+missing model is a startup failure; deferred, the failure would land on a task
+nobody awaits and the process would come up reporting itself healthy.
 
 ---
 
@@ -207,6 +246,34 @@ cannot leak another tenant's documents by forgetting a check. A document
 belonging to someone else returns **404, not 403** — a 403 would confirm that
 the ID exists.
 
+### Schema changes
+
+Alembic, in `migrations/`. `DatabaseManager` applies pending revisions during
+startup when `DB_AUTO_MIGRATE` is true, which is the default because a
+single-container deployment has nowhere else to run them. Set it false and run
+`alembic upgrade head` as a deploy step wherever more than one replica exists;
+startup then verifies the tables are present and refuses to start if they are
+not.
+
+This replaced `Base.metadata.create_all`, which creates missing *tables* and
+nothing else — so a new column reached a developer's fresh database, passed CI
+(which starts from an empty SQLite file every run) and did nothing at all on
+any database that already existed. It failed at query time instead, on the
+deployment that mattered most.
+
+Three details that are load-bearing:
+
+- **Adoption.** A database built by the old `create_all` path has every table
+  and no `alembic_version` row. Startup recognises that and stamps it at the
+  baseline rather than replaying the baseline onto tables that exist.
+- **Batch mode.** `render_as_batch=True` in `migrations/env.py`, because SQLite
+  cannot `ALTER` a column in place — it is the only way a column change reaches
+  the default database. A no-op on PostgreSQL.
+- **Concurrency.** Alembic's `EnvironmentContext` communicates through
+  module-level globals, so two migrations in one interpreter tear down each
+  other's state. A per-event-loop lock serialises them; separate Gunicorn
+  worker *processes* are covered by the existing retry-and-recheck.
+
 ---
 
 ## Failure modes, and what each one does
@@ -217,7 +284,9 @@ The design principle: **degrade visibly, never silently**.
 |---|---|---|
 | No embedding model | Keyword-only lexical matching | `/api/health` → `degraded`; `embeddings_are_real: false` on every response; `roneira_embedding_backend_real` gauge = 0 |
 | tesseract missing | Scans and images are refused, naming the reason; text documents unaffected | The document's failure reason; `ocr_unavailable_reason` in metadata |
-| Two workers create the schema at once | The loser waits and rechecks instead of dying | `Schema was created concurrently by another worker` at INFO |
+| Two workers migrate the schema at once | The loser waits and rechecks instead of dying | `Schema was migrated concurrently by another worker` at INFO |
+| Embedding model still loading | Liveness 200, readiness 503; a search waits for the model rather than answering from incomparable vectors | `/api/health` → `starting`, `embeddings: starting` |
+| `DB_AUTO_MIGRATE=false` and the schema is absent | Startup refuses, naming the missing tables | The startup error |
 | Ollama unreachable | Text still extracted and indexed; no summary or chat prose | `/api/health` → `degraded` with the endpoint it tried |
 | Database down | Requests fail | `/api/health/ready` → 503; liveness stays 200 so the container is not killed |
 | Text extraction fails | Document marked `failed` with a readable reason; nothing indexed | Document status; `roneira_documents_processed_total{status="error"}` |
@@ -325,11 +394,24 @@ Dockerfile earlier but **not** in `deployment/railway.toml` and
 `deployment/render.yaml`, which were still starting `app.main:app` — so a
 Railway or Render deploy ran the dead tree. Both now start `backend.main:app`.
 
-`src/` still holds research and demo scripts (data cataloguing, ontology,
-synthetic data, evaluation) with their own tests under `tests/`. They are not
-imported by `backend.main` and are excluded from the default `pytest` run;
-`pytest tests/` opts into them, and CI now runs that too — 130 tests that
-previously sat outside every automated check.
+`research/` holds the bootcamp deliverables this repository began as — data
+cataloguing, ontology, synthetic data generation, evaluation — with their own
+tests under `tests/`. Nothing in `backend/` imports them; they are reached only
+by `scripts/demo_task*.py` and their tests. They are excluded from the default
+`pytest` run, `pytest tests/` opts into them, and CI runs that too — 130 tests
+that once sat outside every automated check.
+
+They used to live **inside `src/`**, next to the React application, which
+`vite.config.ts` aliases as `@` and `tsconfig.json` includes. Five and a half
+thousand lines of Python sat in the frontend's source root, kept out of the
+bundle only because nothing imported them, and excluded from ruff and mypy so
+that none of it was checked by anything. Moving it to `research/` makes the
+boundary real: `src/` is the frontend, `research/` is Python, and the tree is
+linted in CI alongside `backend/`.
+
+It is not dead code. It has 130 passing tests and it is part of what this
+repository is; the point of moving it was to stop pretending the two halves
+were one codebase.
 
 ---
 
@@ -342,7 +424,7 @@ became urgent — a constraint on the resolver.
 
 `requirements.txt` had accumulated twenty-two packages nothing imported: the
 whole LangChain stack (`langchain`, `-openai`, `-community`, `-core`), the
-`openai` SDK, `tiktoken`, `redis`, `alembic`, `scikit-learn`, `selenium`,
+`openai` SDK, `tiktoken`, `redis`, `scikit-learn`, `selenium`,
 `hypothesis`, `mutmut`, `debugpy`, `Faker`, `typer`, `click`, `orjson`,
 `websockets`, a duplicate `structlog` entry, and `black`/`isort`/`flake8`
 three releases after ruff replaced them.
@@ -355,6 +437,11 @@ have been solving the wrong problem.
 
 Two further notes on what remains:
 
+- **Alembic is back.** It was in that list of twenty-two, pinned while nothing
+  imported it — correctly removed under the rule above. It returned when
+  `migrations/` was actually written and `backend/core/database.py` started
+  applying revisions. That is the rule working in both directions, not an
+  exception to it: the package is here because code uses it.
 - **Vector store.** Chroma is embedded via `PersistentClient` — in-process, no
   HTTP listener, no auth provider, no tenants. This is why the four open
   chromadb advisories, all of which target its *server*, are not reachable

@@ -36,8 +36,13 @@ issue rather than working around it.
 
 ```bash
 pytest                                                  # tests + 70% coverage gate
-ruff check backend/ && ruff format backend/
+pytest tests/ --no-cov                                  # the research/ modules
+ruff check backend/ research/ migrations/
+ruff format backend/ research/ migrations/
 mypy backend/core backend/api backend/repositories --ignore-missing-imports
+
+# If you touched backend/core/models.py, this must pass:
+alembic upgrade head && alembic check
 
 npm run type-check && npm run lint && npm run build
 ```
@@ -106,6 +111,24 @@ separate vector stores and no working retrieval.
 field, document it in `.env.example`, and note that pydantic-settings v2
 ignores `Field(env=...)` — use `validation_alias` when the environment name
 differs from the field name.
+
+**Schema changes** need a migration. Change `backend/core/models.py`, then:
+
+```bash
+alembic revision --autogenerate -m "what changed"
+```
+
+Read what it generated before committing it — autogenerate is a first draft.
+It does not detect renames (it writes a drop plus an add, which loses the
+data) and it cannot know what a backfill should contain. `migrations/README.md`
+has the detail. CI runs `alembic check`, so a model change without its
+migration fails the build rather than reaching a database that already exists.
+
+**Repository layout.** `src/` is the React frontend. `research/` is the Python
+research tree (data cataloguing, ontology, synthetic data, evaluation) with
+tests in `tests/`. `backend/` is the service. The research code used to live
+inside `src/`, which is how 5,500 lines of Python ended up in the frontend's
+source root, excluded from every linter; please keep the boundary.
 
 **Style** is whatever `ruff format` produces. Line length 90. Type hints on
 public functions. Google-style docstrings on anything non-obvious.
