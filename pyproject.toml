@@ -9,9 +9,7 @@ target-version = "py311"
 extend-exclude = [
     ".venv",
     "node_modules",
-    "src",       # research/demo modules, formatted separately
-    "app",       # legacy tree, see docs/ARCHITECTURE.md
-    "scripts",
+    "scripts",   # demo drivers for research/, see docs/ARCHITECTURE.md
 ]
 
 [tool.ruff.lint]
@@ -44,6 +42,10 @@ ignore = [
     "S105",     # hard-coded test credentials are not secrets
     "S106",
     "S311",
+    # The migration tests shell out to `alembic` on purpose: running it as the
+    # command line does is the only way to cover the path CI and a deploy take.
+    # Every argument is a literal in the test.
+    "S603",
     "ASYNC230", # tests read small fixture files synchronously on purpose
     "ASYNC240",
 ]
@@ -62,6 +64,21 @@ ignore = [
 "backend/services/text_splitter_service.py" = ["B007"]
 "backend/services/vector_store_service.py" = ["ASYNC240", "E402", "F401"]
 "backend/training/data_preparation.py" = ["S311", "S324"]
+
+# The research tree, now out of the frontend source root and linted for the
+# first time (issue #47). Its other 84 findings were fixed; these two rules are
+# wrong for this code rather than work left undone.
+"research/data_generation/synthetic_data_generator.py" = [
+    # Generating synthetic evaluation data is what `random` is for. Nothing
+    # here is a secret or a token, and reproducibility is the point.
+    "S311",
+]
+"research/orchestration/agent_orchestrator.py" = [
+    # `Agent.cleanup` is an optional hook with a working no-op default, not an
+    # unimplemented abstract method. @abstractmethod would force every agent
+    # to write `pass`.
+    "B027",
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["backend"]
@@ -85,4 +102,8 @@ indent-style = "space"
 warn_unused_configs = true
 ignore_missing_imports = true
 no_strict_optional = true
-exclude = ["^(app|src|scripts|tests)/", "^\\.venv/"]
+# `research/` and its demo drivers in `scripts/` are the bootcamp deliverables
+# this repository started as: self-contained, separately tested, imported by
+# nothing in `backend/`. Ruff lints them; mypy does not, because annotating
+# 5,500 lines of standalone analysis code buys less than it costs here.
+exclude = ["^(research|scripts|tests)/", "^\\.venv/"]

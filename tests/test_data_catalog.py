@@ -15,14 +15,14 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data_catalog import (
+from research.data_catalog import (
     DataSourceCatalog,
     DataSource,
     SourceType,
     DataProfiler,
     DataQualityReport,
 )
-from src.data_catalog.data_source_catalog import DataFormat
+from research.data_catalog.data_source_catalog import DataFormat
 
 
 class TestDataSourceCatalog:

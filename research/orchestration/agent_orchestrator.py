@@ -11,15 +11,14 @@ This module implements Task 4 of the AI Developer Roadmap:
 - Self-reflection and improvement patterns
 """
 
-import json
-import logging
 import asyncio
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable, Union
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-from abc import ABC, abstractmethod
+import logging
 import uuid
+from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -564,8 +563,7 @@ class AgentOrchestrator:
         self.execution_history: List[WorkflowResult] = []
 
         logger.info(
-            "AgentOrchestrator initialized with agents: "
-            + ", ".join(self.agents.keys())
+            "AgentOrchestrator initialized with agents: " + ", ".join(self.agents.keys())
         )
 
     def _generate_workflow_id(self) -> str:
@@ -775,7 +773,7 @@ class AgentOrchestrator:
                 performance[agent_name]["total_time"] += agent_result.execution_time
 
         # Calculate averages
-        for agent_name, stats in performance.items():
+        for _agent_name, stats in performance.items():
             if stats["executions"] > 0:
                 stats["success_rate"] = stats["successes"] / stats["executions"]
                 stats["avg_time"] = stats["total_time"] / stats["executions"]

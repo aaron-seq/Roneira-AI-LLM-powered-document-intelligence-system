@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.ontology import (
+from research.ontology import (
     KnowledgeOntology,
     OntologyNode,
     OntologyRelation,

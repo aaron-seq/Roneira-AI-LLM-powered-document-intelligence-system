@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data_generation import (
+from research.data_generation import (
     SyntheticDataGenerator,
     QAPair,
     GenerationConfig,
@@ -22,7 +22,7 @@ from src.data_generation import (
     DatasetSplit,
     ValidationReport,
 )
-from src.data_generation.synthetic_data_generator import Difficulty, QuestionType
+from research.data_generation.synthetic_data_generator import Difficulty, QuestionType
 
 
 class TestSyntheticDataGenerator:
