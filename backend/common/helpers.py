@@ -284,10 +284,25 @@ async def _extract_from_docx(file_path: str) -> Tuple[str, Dict[str, Any]]:
 #: previews and in the context handed to the model.
 _CID_ARTEFACT = re.compile(r"\(cid:\d+\)")
 
+#: Inline formatting tags that reached the text layer as literal characters.
+#:
+#: PDF generators that take marked-up paragraphs — ReportLab and
+#: wkhtmltopdf among them — write the tags into the page when a style is
+#: missing or the markup is not recognised. The bundled invoice samples do
+#: exactly this: `<b>TOTAL DUE: $8385.00</b>` is in the text layer of all ten,
+#: so it flowed into summaries, search results and exports.
+#:
+#: Deliberately a closed list of inline formatting tags rather than a general
+#: tag stripper. A document that is *about* markup keeps its content: only
+#: these six are removed, and a `<div>`, a `<script>` or an XML element in a
+#: technical document passes through untouched.
+_INLINE_MARKUP = re.compile(r"</?(?:b|i|u|em|strong|br)\s*/?>", re.IGNORECASE)
+
 
 def _normalise_whitespace(text: str) -> str:
     """Clean up extraction artefacts and collapse redundant whitespace."""
     text = _CID_ARTEFACT.sub("•", text)
+    text = _INLINE_MARKUP.sub("", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()

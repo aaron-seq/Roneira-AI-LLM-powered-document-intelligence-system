@@ -84,10 +84,17 @@ def render_markdown(document: Dict[str, Any]) -> str:
 
     if insights.get("summary"):
         source = insights.get("summary_source")
-        lines += ["## Summary", ""]
+        # A verbatim "summary" is the whole document, so heading it "Summary"
+        # would misdescribe it.
+        lines += ["## Document text" if source == "verbatim" else "## Summary", ""]
         if source == "extractive":
             lines += [
                 "_Sentences selected from the document itself; no model was involved._",
+                "",
+            ]
+        elif source == "verbatim":
+            lines += [
+                "_Short enough to read in full, so nothing was summarised._",
                 "",
             ]
         lines += [insights["summary"], ""]

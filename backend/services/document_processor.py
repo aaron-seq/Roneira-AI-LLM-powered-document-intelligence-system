@@ -72,7 +72,9 @@ class DocumentProcessorService:
                 error=str(exc),
             )
 
-        await self.retrieval_service.initialize()
+        # The store only. Loading the embedding model here would undo the
+        # deferral the container just chose; indexing awaits the model itself.
+        await self.retrieval_service.ensure_store_ready()
 
         if self.llm_service.is_initialized:
             logger.info("Document processor ready (AI enrichment enabled)")
@@ -273,21 +275,17 @@ class DocumentProcessorService:
 
         if not options.get("enhance_with_ai", True):
             return {
-                "summary": summarise(extracted_text),
+                **self._extractive_summary(extracted_text),
                 "key_points": [],
                 "enrichment": "skipped",
-                "summary_source": "extractive",
                 **insights,
             }
 
         if not self.ai_enabled:
             return {
-                "summary": summarise(extracted_text),
+                **self._extractive_summary(extracted_text),
                 "key_points": [],
                 "enrichment": "unavailable",
-                # Named so a reader knows this summary is the document's own
-                # sentences, not prose written about it.
-                "summary_source": "extractive",
                 **insights,
             }
 
@@ -304,6 +302,27 @@ class DocumentProcessorService:
         # supersede the model's recollection of them.
         result.update(insights)
         return result
+
+    @staticmethod
+    def _extractive_summary(extracted_text: str) -> Dict[str, Any]:
+        """Summarise without a model, naming which of the two things happened.
+
+        ``summary_source`` distinguishes three cases so a reader is never
+        shown a document as a summary of itself:
+
+        ``llm``
+            Prose written about the document by the language model.
+        ``extractive``
+            The document's own sentences, selected by word statistics.
+        ``verbatim``
+            The whole document, because it was too short to compress. Common
+            for invoices and forms, which are tabular rather than prose.
+        """
+        summary = summarise(extracted_text)
+        return {
+            "summary": summary.text,
+            "summary_source": "verbatim" if summary.is_verbatim else "extractive",
+        }
 
     # --------------------------------------------------------------- helpers
     async def _advance(

@@ -27,7 +27,10 @@ from typing import Any, Dict, List
 from backend.common.helpers import strip_page_markers
 from backend.services.entity_extraction_service import EntityType, PatternEntityExtractor
 from backend.services.pii_detection_service import PIIDetector
-from backend.services.summarization_service import ExtractiveSummarizer
+from backend.services.summarization_service import (
+    ExtractiveSummarizer,
+    ExtractiveSummary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +100,7 @@ def detect_pii(text: str) -> Dict[str, Any]:
     }
 
 
-def summarise(text: str, sentences: int = 3) -> str:
+def summarise(text: str, sentences: int = 3) -> ExtractiveSummary:
     """Pick the most representative sentences from the text.
 
     Extractive, so every word is the document's own. Used when the LLM cannot
@@ -107,16 +110,20 @@ def summarise(text: str, sentences: int = 3) -> str:
     The ``--- Page N ---`` separators are stripped first. They are a retrieval
     positioning device, and leaving them in put "--- Page 1 ---" at the top of
     every summary shown in the UI and every Markdown export.
+
+    The result carries ``is_verbatim`` because a document with fewer than
+    ``sentences`` sentences is returned whole. That is the right content and
+    the wrong label: presenting an invoice as a summary of itself tells a
+    reader the system compressed something when it did not.
     """
     try:
-        # Returns a plain string, despite the SummaryResult dataclass defined
-        # alongside it — that is only used by the abstractive path.
-        return _summariser.summarize(
+        result = _summariser.summarize_detailed(
             strip_page_markers(text)[:MAX_ANALYSIS_CHARS], num_sentences=sentences
-        ).strip()
+        )
+        return ExtractiveSummary(text=result.text.strip(), is_verbatim=result.is_verbatim)
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("Extractive summarisation failed: %s", exc)
-        return ""
+        return ExtractiveSummary(text="", is_verbatim=False)
 
 
 def build_insights(text: str) -> Dict[str, Any]:

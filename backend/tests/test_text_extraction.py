@@ -90,6 +90,64 @@ class TestExtractionSucceeds:
         assert metadata["pages"] == 1
 
 
+class TestInlineMarkupIsStripped:
+    """Literal `<b>` in a text layer is a generator artefact, not content.
+
+    PDF writers that take marked-up paragraphs (ReportLab, wkhtmltopdf) emit
+    the tags into the page when a style is missing. All ten bundled invoice
+    samples carry `<b>TOTAL DUE: ...</b>` in their text layer, which flowed
+    into summaries, search results and Markdown exports.
+    """
+
+    def test_formatting_tags_are_removed(self):
+        from backend.common.helpers import _normalise_whitespace
+
+        cleaned = _normalise_whitespace("<b>TOTAL DUE: $8385.00</b>\n<i>Net 30</i><br/>")
+
+        assert "<b>" not in cleaned and "</b>" not in cleaned
+        assert "<i>" not in cleaned and "<br/>" not in cleaned
+        assert "TOTAL DUE: $8385.00" in cleaned, "the content itself must survive"
+        assert "Net 30" in cleaned
+
+    def test_other_tags_are_left_alone(self):
+        """Only a closed list of inline formatting tags is stripped.
+
+        A document *about* markup keeps its content. A general tag stripper
+        would quietly delete the subject matter of a technical document.
+        """
+        from backend.common.helpers import _normalise_whitespace
+
+        cleaned = _normalise_whitespace(
+            "Wrap the body in <div> and avoid <script> in templates."
+        )
+
+        assert "<div>" in cleaned
+        assert "<script>" in cleaned
+
+    @pytest.mark.asyncio
+    async def test_the_bundled_invoice_samples_are_clean(self):
+        """Verified against the real files, since that is where it was found."""
+        text, _ = await extract_text_from_file("docs/samples/INV-2025-1001.pdf")
+
+        assert "<b>" not in text
+        assert "TOTAL DUE" in text
+
+    @pytest.mark.asyncio
+    async def test_a_plain_text_file_is_left_exactly_as_written(self, tmp_path):
+        """Normalisation applies to generated formats, not to literal text.
+
+        PDF and DOCX come out of tools that inject markup. A `.txt` file is
+        what somebody typed, so rewriting it would be editing their document
+        rather than repairing an extraction artefact.
+        """
+        path = tmp_path / "snippet.txt"
+        path.write_text("Use <b> for bold in legacy HTML.")
+
+        text, _ = await extract_text_from_file(str(path))
+
+        assert "<b>" in text
+
+
 class TestOCR:
     """Scanned documents must become searchable, and say that they were OCR'd.
 
