@@ -14,7 +14,10 @@ from typing import Any, Dict, List, Optional
 
 from backend.common.helpers import PAGE_MARKER, strip_page_markers
 from backend.core.config import get_settings
-from backend.services.embedding_service import EmbeddingService
+from backend.services.embedding_service import (
+    EmbeddingModelUnavailable,
+    EmbeddingService,
+)
 from backend.services.reranking import Reranker
 from backend.services.text_splitter_service import TextSplitterService
 from backend.services.vector_store_service import (
@@ -229,8 +232,29 @@ class RetrievalService:
         """
         if self._models_loaded:
             return
-        await self.embedding_service.initialize()
-        await self.reranker.initialize()
+
+        try:
+            await self.embedding_service.initialize()
+            await self.reranker.initialize()
+        except EmbeddingModelUnavailable:
+            # REQUIRE_REAL_EMBEDDINGS: the deployment asked for this to be
+            # fatal. Mark the load settled so readiness is not left pending
+            # either way, then let it propagate — on that setting the load is
+            # inline, so this reaches whoever started the application.
+            self._models_loaded = True
+            raise
+        except Exception:
+            # Anything else is a degradation, not a reason to hang. An
+            # exception escaping the background task would leave
+            # `models_loading` true forever, so /api/health/ready would return
+            # 503 for the life of the process rather than reporting the
+            # keyword-only fallback that is the documented behaviour.
+            logger.exception(
+                "Model load failed; continuing with whatever backend is available"
+            )
+            self._models_loaded = True
+            return
+
         self._models_loaded = True
 
         if not self.embedding_service.is_real:

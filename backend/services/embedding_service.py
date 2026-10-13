@@ -35,13 +35,29 @@ _SENTENCE_TRANSFORMERS_AVAILABLE: Optional[bool] = None
 _SentenceTransformer: Any = None
 
 
+#: Why the import failed, when it did. Carried out of the import so the
+#: degraded state can say something more useful than "not installed".
+_IMPORT_FAILURE: Optional[str] = None
+
+
 def _load_sentence_transformers() -> bool:
-    """Import sentence-transformers, reporting whether it is installed.
+    """Import sentence-transformers, reporting whether it is usable.
 
     Idempotent and cached: the answer cannot change within a process, and the
     import is far too expensive to retry per call.
+
+    Catches ``Exception``, not just ``ImportError``. A broken installation
+    raises other things — an ``OSError`` for a missing shared library, a
+    ``RuntimeError`` from an incompatible transitive package — and torch is
+    exactly the kind of dependency that does. While this import sat at module
+    scope, such a failure killed the process at import: loud, and impossible
+    to miss. Now that it runs inside a background task, an escaping exception
+    would instead leave the load never settling, so ``models_loading`` stays
+    true and ``/api/health/ready`` returns 503 for the life of the process —
+    a worse outcome than the keyword-only degradation this is supposed to
+    fall back to.
     """
-    global _SENTENCE_TRANSFORMERS_AVAILABLE, _SentenceTransformer
+    global _SENTENCE_TRANSFORMERS_AVAILABLE, _SentenceTransformer, _IMPORT_FAILURE
 
     if _SENTENCE_TRANSFORMERS_AVAILABLE is not None:
         return _SENTENCE_TRANSFORMERS_AVAILABLE
@@ -52,10 +68,19 @@ def _load_sentence_transformers() -> bool:
         _SENTENCE_TRANSFORMERS_AVAILABLE = True
     except ImportError:
         _SENTENCE_TRANSFORMERS_AVAILABLE = False
-        logger.warning(
-            "sentence-transformers not installed. "
-            "Install with: pip install sentence-transformers"
+        _IMPORT_FAILURE = (
+            "sentence-transformers is not installed (pip install sentence-transformers)"
         )
+        logger.warning("%s", _IMPORT_FAILURE)
+    except Exception as exc:
+        _SENTENCE_TRANSFORMERS_AVAILABLE = False
+        _IMPORT_FAILURE = (
+            f"sentence-transformers is installed but could not be imported: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        # Loud, because this is a broken installation rather than an absent
+        # one, and the difference matters to whoever has to fix it.
+        logger.error("%s", _IMPORT_FAILURE, exc_info=True)
     return _SENTENCE_TRANSFORMERS_AVAILABLE
 
 
@@ -195,7 +220,8 @@ class EmbeddingService:
         # serving requests.
         if not await loop.run_in_executor(None, _load_sentence_transformers):
             self._degrade(
-                "sentence-transformers is not installed "
+                _IMPORT_FAILURE
+                or "sentence-transformers is not installed "
                 "(pip install sentence-transformers)"
             )
             return

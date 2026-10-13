@@ -210,6 +210,166 @@ class TestConcurrentStartup:
         assert asyncio.run(boot())
 
 
+class TestAPartialSchemaIsRefused:
+    """A half-created database is not a pre-migrations database.
+
+    Raised in review. Adoption used to stamp whenever *any* model table was
+    present, so a database left behind by an interrupted bootstrap — say one
+    with `documents` but no `document_chunks` — was stamped at the baseline.
+    Alembic then skipped the baseline as already applied, the missing tables
+    were never created, and the application started successfully and failed at
+    request time. Which is precisely the defect migrations were added to stop.
+    """
+
+    @pytest.mark.asyncio
+    async def test_it_refuses_rather_than_stamping(self, database):
+        await _build_legacy_database(f"sqlite+aiosqlite:///{database}")
+
+        # Simulate the bootstrap having died partway through.
+        connection = sqlite3.connect(database)
+        connection.execute("DROP TABLE document_chunks")
+        connection.commit()
+        connection.close()
+        assert "document_chunks" not in _tables(database)
+
+        manager = DatabaseManager()
+        with pytest.raises(RuntimeError, match="partially created schema"):
+            await manager.initialize()
+        await manager.close()
+
+    @pytest.mark.asyncio
+    async def test_the_refusal_names_both_sides(self, database):
+        """What is missing and what is there — enough to decide what to do."""
+        await _build_legacy_database(f"sqlite+aiosqlite:///{database}")
+        connection = sqlite3.connect(database)
+        connection.execute("DROP TABLE document_chunks")
+        connection.commit()
+        connection.close()
+
+        manager = DatabaseManager()
+        with pytest.raises(RuntimeError) as excinfo:
+            await manager.initialize()
+        await manager.close()
+
+        message = str(excinfo.value)
+        assert "document_chunks" in message, "name what is missing"
+        assert "documents" in message, "and what is present"
+
+    @pytest.mark.asyncio
+    async def test_a_partial_schema_is_not_silently_stamped(self, database):
+        """The specific failure: stamped, so the baseline never runs."""
+        await _build_legacy_database(f"sqlite+aiosqlite:///{database}")
+        connection = sqlite3.connect(database)
+        connection.execute("DROP TABLE chat_feedback")
+        connection.commit()
+        connection.close()
+
+        manager = DatabaseManager()
+        with pytest.raises(RuntimeError):
+            await manager.initialize()
+        await manager.close()
+
+        assert _revision(database) is None, "must not have been stamped"
+        assert "chat_feedback" not in _tables(database)
+
+    @pytest.mark.asyncio
+    async def test_an_empty_database_is_still_migrated_normally(self, database):
+        """The guard must not catch the ordinary fresh-install case."""
+        manager = DatabaseManager()
+        await manager.initialize()
+        await manager.close()
+
+        assert _revision(database) == "0001_baseline"
+        assert {"documents", "document_chunks", "chat_feedback"} <= _tables(database)
+
+
+class TestAFailedMigrationIsNotMistakenForARace:
+    """ "The tables exist" is not "the migration applied".
+
+    Raised in review. Those were the same thing under `create_all`, where a
+    present table *was* the success condition. With migrations they are not: a
+    future revision adding a column can fail for a real reason while every
+    table is still present, and treating that as another worker having won the
+    race would start the application against a schema missing the column —
+    failing at request time, which is the defect migrations exist to prevent.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_failure_below_head_is_not_suppressed(self, database, monkeypatch):
+        from sqlalchemy.exc import OperationalError
+
+        # A database with every table, already at head.
+        manager = DatabaseManager()
+        await manager.initialize()
+        await manager.close()
+        assert _revision(database) == "0001_baseline"
+
+        # Now pretend a later revision exists that this database has not
+        # reached, and that applying it fails.
+        monkeypatch.setattr(
+            DatabaseManager,
+            "_is_at_head",
+            lambda self: _false(),
+        )
+
+        async def failing_migration(self, url):
+            raise OperationalError(
+                "ALTER TABLE documents ADD COLUMN tags", {}, Exception()
+            )
+
+        monkeypatch.setattr(DatabaseManager, "_run_migrations", failing_migration)
+
+        manager = DatabaseManager()
+        with pytest.raises(OperationalError):
+            await manager.initialize()
+        await manager.close()
+
+    @pytest.mark.asyncio
+    async def test_a_failure_at_head_is_treated_as_a_race(self, database, monkeypatch):
+        """The legitimate case still works: another worker got there first."""
+        from sqlalchemy.exc import OperationalError
+
+        manager = DatabaseManager()
+        await manager.initialize()
+        await manager.close()
+
+        async def failing_migration(self, url):
+            raise OperationalError("table documents already exists", {}, Exception())
+
+        monkeypatch.setattr(DatabaseManager, "_run_migrations", failing_migration)
+
+        manager = DatabaseManager()
+        # `_is_at_head` is real here and the database genuinely is at head.
+        await manager.initialize()
+        assert await manager.health_check()
+        await manager.close()
+
+    @pytest.mark.asyncio
+    async def test_is_at_head_reports_false_for_an_unmigrated_database(self, database):
+        manager = DatabaseManager()
+        manager._database_url = f"sqlite+aiosqlite:///{database}"
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        manager._engine = create_async_engine(manager._database_url)
+        try:
+            assert await manager._is_at_head() is False
+        finally:
+            await manager._engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_is_at_head_reports_true_once_migrated(self, database):
+        manager = DatabaseManager()
+        await manager.initialize()
+        try:
+            assert await manager._is_at_head() is True
+        finally:
+            await manager.close()
+
+
+async def _false() -> bool:
+    return False
+
+
 class TestAutoMigrateCanBeTurnedOff:
     """Production applies migrations as its own step, not on whichever replica
     boots first. ``DB_AUTO_MIGRATE=false`` is how a deployment says so.

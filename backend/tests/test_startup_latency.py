@@ -226,6 +226,83 @@ class TestRequestsWaitRatherThanDegrade:
         assert not retrieval.models_loading
 
 
+class TestTheLoadAlwaysSettles:
+    """A load that fails must still end, or readiness never recovers.
+
+    `models_loading` stays true until the load settles, and readiness returns
+    503 while it is true. So an exception escaping the background task does not
+    merely lose the model — it wedges `/api/health/ready` at 503 for the life
+    of the process, which an orchestrator reads as "never send this traffic".
+    That is worse than the keyword-only fallback it is supposed to degrade to.
+
+    Raised in review of this change. The import previously sat at module
+    scope, where a failure killed the process outright; moving it into a
+    background task is what made a silent permanent 503 possible.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            ImportError("no module named sentence_transformers"),
+            # A broken install, not an absent one. torch is exactly the kind
+            # of dependency that fails this way.
+            OSError("libtorch_cpu.so: cannot open shared object file"),
+            RuntimeError("numpy.dtype size changed, may indicate binary incompatibility"),
+        ],
+        ids=["absent", "broken-shared-library", "incompatible-binary"],
+    )
+    async def test_any_import_failure_degrades_rather_than_hanging(
+        self, workspace, monkeypatch, failure
+    ):
+        import backend.services.embedding_service as module
+
+        service = RetrievalService(
+            collection_name=f"import_failure_{type(failure).__name__}",
+            persist_directory=str(workspace / f"import_fail_{type(failure).__name__}"),
+            require_real_embeddings=False,
+        )
+
+        # Reset the cached import result, then make the import fail.
+        monkeypatch.setattr(module, "_SENTENCE_TRANSFORMERS_AVAILABLE", None)
+        monkeypatch.setattr(module, "_IMPORT_FAILURE", None)
+
+        def failing_import(name: str):
+            raise failure
+
+        monkeypatch.setattr(module.importlib, "import_module", failing_import)
+
+        await service.initialize_deferred()
+        task = service.start_model_load()
+        assert task is not None
+        await task
+
+        assert not service.models_loading, "readiness would be stuck at 503"
+        assert not service.embeddings_are_real
+        assert service.embedding_service.degraded_reason, "must say why"
+
+    @pytest.mark.asyncio
+    async def test_an_unexpected_failure_still_settles_the_load(self, workspace):
+        """Belt and braces: whatever escapes, the load ends."""
+        service = RetrievalService(
+            collection_name="unexpected_failure_test",
+            persist_directory=str(workspace / "unexpected_vectors"),
+            require_real_embeddings=False,
+        )
+
+        async def explode() -> None:
+            raise RuntimeError("something nobody anticipated")
+
+        service.embedding_service.initialize = explode  # type: ignore[method-assign]
+
+        await service.initialize_deferred()
+        task = service.start_model_load()
+        assert task is not None
+        await task
+
+        assert not service.models_loading
+
+
 class TestRequireRealEmbeddingsIsNotDeferred:
     """A deployment that demands semantic search must still fail fast.
 
@@ -325,9 +402,19 @@ class TestHealthReportsTheLoadWindow:
         Nothing is missing during the load window; it is not all there yet.
         Reporting "degraded" on every boot would train an operator to ignore
         the one signal that says search results are keyword-only for good.
+
+        Both properties are patched, because the real load window has both:
+        the model is not loaded, and therefore not real. Patching only
+        `models_loading` describes a state that cannot occur — `is_real`
+        becomes true only once the load finishes — and the health check tests
+        `embeddings_are_real` first, so the assertion passed here (where the
+        model download is blocked) and failed in CI (where it succeeds).
         """
         retrieval = app.state.container.retrieval_service
         monkeypatch.setattr(type(retrieval), "models_loading", property(lambda _: True))
+        monkeypatch.setattr(
+            type(retrieval), "embeddings_are_real", property(lambda _: False)
+        )
 
         body = client.get("/api/health").json()
 

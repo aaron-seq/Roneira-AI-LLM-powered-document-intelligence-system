@@ -265,7 +265,18 @@ Three details that are load-bearing:
 
 - **Adoption.** A database built by the old `create_all` path has every table
   and no `alembic_version` row. Startup recognises that and stamps it at the
-  baseline rather than replaying the baseline onto tables that exist.
+  baseline rather than replaying the baseline onto tables that exist. It
+  requires **all** the baseline tables, not any of them: a database with only
+  some is an interrupted bootstrap, and stamping it would skip the baseline so
+  the missing tables were never created. That case is refused by name, because
+  neither creating the absent tables nor dropping the present ones is safe to
+  do unattended.
+- **A failed migration is not a won race.** When a migration raises, startup
+  continues only if the database has actually reached head — not merely if the
+  tables are present. Those were the same condition under `create_all`, where
+  a present table *was* success; with migrations they are not, and taking
+  table presence as proof would start the application against a schema a
+  failed revision never updated.
 - **Batch mode.** `render_as_batch=True` in `migrations/env.py`, because SQLite
   cannot `ALTER` a column in place — it is the only way a column change reaches
   the default database. A no-op on PostgreSQL.
@@ -287,6 +298,8 @@ The design principle: **degrade visibly, never silently**.
 | Two workers migrate the schema at once | The loser waits and rechecks instead of dying | `Schema was migrated concurrently by another worker` at INFO |
 | Embedding model still loading | Liveness 200, readiness 503; a search waits for the model rather than answering from incomparable vectors | `/api/health` → `starting`, `embeddings: starting` |
 | `DB_AUTO_MIGRATE=false` and the schema is absent | Startup refuses, naming the missing tables | The startup error |
+| A partially created schema (interrupted bootstrap) | Startup refuses, naming what is missing and what is present | The startup error |
+| sentence-transformers installed but unimportable | Keyword-only matching, and the load settles so readiness still clears | `/api/health` → `degraded` with the import error; an ERROR-level log with the traceback |
 | Ollama unreachable | Text still extracted and indexed; no summary or chat prose | `/api/health` → `degraded` with the endpoint it tried |
 | Database down | Requests fail | `/api/health/ready` → 503; liveness stays 200 so the container is not killed |
 | Text extraction fails | Document marked `failed` with a readable reason; nothing indexed | Document status; `roneira_documents_processed_total{status="error"}` |

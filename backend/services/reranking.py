@@ -36,7 +36,12 @@ _CrossEncoder: Any = None
 
 
 def _load_cross_encoder() -> bool:
-    """Import the cross-encoder, reporting whether it is installed."""
+    """Import the cross-encoder, reporting whether it is usable.
+
+    Catches ``Exception`` for the same reason the embedding service does: a
+    broken install raises more than ``ImportError``, and an exception escaping
+    a background task leaves readiness wedged at 503 rather than degrading.
+    """
     global _CROSS_ENCODER_AVAILABLE, _CrossEncoder
 
     if _CROSS_ENCODER_AVAILABLE is not None:
@@ -48,6 +53,14 @@ def _load_cross_encoder() -> bool:
         _CROSS_ENCODER_AVAILABLE = True
     except ImportError:  # pragma: no cover - optional dependency
         _CROSS_ENCODER_AVAILABLE = False
+    except Exception as exc:
+        _CROSS_ENCODER_AVAILABLE = False
+        logger.error(
+            "sentence-transformers is installed but could not be imported: %s: %s",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
     return _CROSS_ENCODER_AVAILABLE
 
 

@@ -172,7 +172,15 @@ class DatabaseManager:
                 return
             except (OperationalError, ProgrammingError) as exc:
                 last_error = exc
-                if not await self._missing_tables():
+                # "At head", not "the tables exist". Those were the same thing
+                # under `create_all`, where a present table *was* the success
+                # condition — but with migrations they are not. A future
+                # revision adding a column can fail for a real reason while
+                # every table is still there, and taking table presence as
+                # proof of success would start the application against a
+                # schema that is missing the column, failing at request time
+                # instead. Which is the whole defect migrations were added for.
+                if await self._is_at_head():
                     logger.info(
                         "Schema was migrated concurrently by another worker; continuing"
                     )
@@ -184,6 +192,30 @@ class DatabaseManager:
                 await asyncio.sleep(_SCHEMA_RETRY_DELAY * (attempt + 1))
 
         raise last_error or RuntimeError("Schema migration failed without an error")
+
+    async def _is_at_head(self) -> bool:
+        """True when the database's recorded revision is the latest one.
+
+        This is the real success condition for a migration, and the only safe
+        basis for deciding that a failure was another worker winning the race
+        rather than a migration that genuinely did not apply.
+        """
+
+        def _check(sync_conn) -> bool:
+            from alembic.migration import MigrationContext
+            from alembic.script import ScriptDirectory
+
+            current = MigrationContext.configure(sync_conn).get_current_revision()
+            head = ScriptDirectory.from_config(_alembic_config()).get_current_head()
+            return current is not None and current == head
+
+        try:
+            async with self._require_engine().connect() as conn:
+                return await conn.run_sync(_check)
+        except Exception as exc:
+            # Cannot read the version table, so cannot claim success.
+            logger.debug("Could not read the current Alembic revision: %s", exc)
+            return False
 
     async def _run_migrations(self, url: str) -> None:
         """Apply pending Alembic revisions through our own engine.
@@ -239,9 +271,20 @@ class DatabaseManager:
         that case is stamped at the baseline instead: the schema is recorded as
         already-at-that-revision and later migrations apply normally.
 
-        The distinction is "has our tables but no version row", not "is
-        non-empty" — a database holding somebody else's tables is not one of
-        ours to adopt.
+        The distinction is "has **all** our tables but no version row", not
+        "is non-empty" — a database holding somebody else's tables is not one
+        of ours to adopt, and one holding only *some* of ours is not a
+        pre-migrations database at all.
+
+        That last case matters. Stamping on any single table present would
+        adopt a database left behind by an interrupted bootstrap — say one
+        with `documents` but not `document_chunks` — and the baseline would
+        then be skipped as already applied, so the missing tables would never
+        be created and the application would start and fail at request time.
+        A partial schema is refused instead, by name, because no automatic
+        action is safe: creating the absent tables would leave them
+        inconsistent with whatever interrupted the original run, and dropping
+        the present ones would destroy data.
         """
         from alembic import command
         from alembic.migration import MigrationContext
@@ -252,12 +295,27 @@ class DatabaseManager:
         context = MigrationContext.configure(sync_conn)
         if context.get_current_revision() is None:
             existing = set(sa_inspect(sync_conn).get_table_names())
-            if any(name in existing for name in Base.metadata.tables):
+            expected = set(Base.metadata.tables)
+            present = expected & existing
+
+            if present == expected:
                 logger.info(
                     "Adopting a pre-migrations database: stamping it at %s",
                     _BASELINE_REVISION,
                 )
                 command.stamp(config, _BASELINE_REVISION)
+            elif present:
+                raise RuntimeError(
+                    "Refusing to migrate a partially created schema. This "
+                    "database has no alembic_version row, so it predates "
+                    "migrations, but it is missing "
+                    f"{', '.join(sorted(expected - present))} while holding "
+                    f"{', '.join(sorted(present))}. That is an interrupted "
+                    "bootstrap rather than a database to adopt. Restore it, "
+                    "or drop the remaining tables to start clean."
+                )
+            # Nothing of ours present: a genuinely empty database, so the
+            # baseline applies normally below.
 
         command.upgrade(config, "head")
 
