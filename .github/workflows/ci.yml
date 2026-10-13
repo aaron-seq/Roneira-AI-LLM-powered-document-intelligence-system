@@ -112,6 +112,18 @@ jobs:
           SECRET_KEY: ci-secret-key-not-used-outside-github-actions-0123456789
         run: pytest tests/ -v --no-cov
 
+      # The check that stops a model change being merged without the migration
+      # that delivers it. `create_all` used to hide this: it creates missing
+      # tables, so a new column reached a fresh database and never an existing
+      # one — and CI, which starts from an empty file every run, never noticed.
+      - name: Migrations match the models (alembic check)
+        env:
+          ENVIRONMENT: test
+          SECRET_KEY: ci-secret-key-not-used-outside-github-actions-0123456789
+          DATABASE_URL: sqlite+aiosqlite:///./ci-drift.db
+        run: |
+          alembic upgrade head
+          alembic check
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4

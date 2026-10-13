@@ -24,6 +24,11 @@ NOISY_LOGGERS = {
     "sentence_transformers": logging.WARNING,
     "chromadb": logging.WARNING,
     "urllib3": logging.WARNING,
+    # Alembic narrates each autogenerate plugin it loads at INFO, which is a
+    # dozen lines on every boot now that migrations run at startup. Its own
+    # logging config in alembic.ini applies to the command line, where that
+    # detail is wanted; this is the in-application path.
+    "alembic.runtime.plugins": logging.WARNING,
 }
 
 

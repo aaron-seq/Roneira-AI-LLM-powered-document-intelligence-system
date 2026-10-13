@@ -75,6 +75,15 @@ class Settings(BaseSettings):
         default="sqlite+aiosqlite:///./document_intelligence.db",
     )
 
+    #: Run pending Alembic migrations during startup.
+    #:
+    #: Convenient, and the default, because a single-container deployment has
+    #: nowhere else to run them. Turn it off where migrations are a deliberate,
+    #: observable step — a Kubernetes init container, a release job, or a
+    #: ``alembic upgrade head`` in the deploy pipeline — so a schema change is
+    #: never applied by whichever replica happens to boot first.
+    db_auto_migrate: bool = Field(default=True)
+
     # ---------------------------------------------------------------- llm
     ollama_base_url: str = Field(default="http://localhost:11434")
     ollama_model: str = Field(default="llama3.2:3b")

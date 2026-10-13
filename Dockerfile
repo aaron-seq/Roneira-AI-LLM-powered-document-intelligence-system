@@ -58,14 +58,22 @@ FROM base AS production
 
 COPY --chown=app:app backend/ ./backend/
 COPY --chown=app:app gunicorn.conf.py ./
+# Migrations are applied at startup (DB_AUTO_MIGRATE, default on), so the
+# revision scripts have to be in the image. Without these two lines the
+# container starts, fails to find alembic.ini, and never serves.
+COPY --chown=app:app alembic.ini ./
+COPY --chown=app:app migrations/ ./migrations/
 
 USER app
 
 EXPOSE 8000
 
 # Liveness must not depend on the database: a transient DB outage should not
-# make the orchestrator kill an otherwise healthy container.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+# make the orchestrator kill an otherwise healthy container. It does not
+# depend on the embedding model either — that loads in a background task, so
+# the start period covers process start rather than a ~170MB download. Gate
+# *traffic* on /api/health/ready, which does wait for the model.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8000/api/health/live || exit 1
 
 # Uvicorn workers under Gunicorn: Gunicorn supervises and recycles processes,
@@ -80,7 +88,7 @@ USER app
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -fsS http://localhost:8000/api/health/live || exit 1
 
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
