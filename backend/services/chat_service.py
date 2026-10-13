@@ -82,7 +82,9 @@ class ChatService:
         """Initialize all component services."""
         if self.is_initialized:
             return
-        await self.retrieval.initialize()
+        # The store only — see DocumentProcessorService.initialize. Retrieval
+        # awaits the embedding model at the point it embeds a query.
+        await self.retrieval.ensure_store_ready()
         await self.llm.initialize()
         self.is_initialized = True
         logger.info("ChatService initialized successfully")

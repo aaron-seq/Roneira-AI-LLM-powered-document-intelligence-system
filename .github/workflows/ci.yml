@@ -58,10 +58,13 @@ jobs:
           pip install -r requirements.txt
 
       - name: Lint (ruff)
-        run: ruff check backend/
+        # `research/` is in scope now that it is no longer inside the frontend
+        # source root. It was excluded from ruff and mypy while it sat in
+        # `src/`, so 5,500 lines of Python were checked by nothing.
+        run: ruff check backend/ research/ migrations/
 
       - name: Format check (ruff)
-        run: ruff format --check backend/
+        run: ruff format --check backend/ research/ migrations/
 
       - name: Type check (mypy)
         # --follow-imports=silent keeps the gate on the packages named here
@@ -99,15 +102,16 @@ jobs:
           DATABASE_URL: sqlite+aiosqlite:///./ci-test.db
         run: pytest -v
 
-      # `tests/` covers the research modules under `src/` (data catalog,
+      # `tests/` covers the research modules under `research/` (data catalog,
       # synthetic data, ontology, evaluation). They were outside testpaths and
-      # so had never run in CI — 131 tests that could rot unnoticed. Coverage
+      # so had never run in CI — 130 tests that could rot unnoticed. Coverage
       # is disabled here because the gate is calibrated for `backend/`.
-      - name: Run the src/ research module tests
+      - name: Run the research module tests
         env:
           ENVIRONMENT: test
           SECRET_KEY: ci-secret-key-not-used-outside-github-actions-0123456789
         run: pytest tests/ -v --no-cov
+
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -280,26 +284,48 @@ jobs:
             -e SECRET_KEY=docker-ci-secret-key-0123456789abcdefghij \
             -e ENVIRONMENT=development \
             roneira-document-intelligence:ci
-          # The first boot downloads the sentence-transformers model (~90MB)
-          # inside the lifespan, before anything is served — so nothing answers
-          # until that finishes. Thirty seconds was not enough on a cold cache,
-          # and this job only ever ran green because it was skipped behind the
-          # failing test job.
-          for attempt in $(seq 1 180); do
+          # Two probes, two very different budgets — which is the point of
+          # having both.
+          #
+          # Liveness no longer waits on the model downloads: they run in a
+          # background task, so the server accepts connections as soon as the
+          # database and vector store are up. This loop used to need 180
+          # attempts because ~170MB of models were fetched inside the lifespan
+          # before anything was served at all.
+          #
+          # Readiness does wait for them, so it keeps a generous budget. A run
+          # where liveness takes more than a few seconds means something has
+          # moved back into the startup path.
+          fail() {
+            echo "$1"
+            docker logs roneira-ci
+            docker rm -f roneira-ci
+            exit 1
+          }
+
+          running() {
+            docker ps -q --filter name=roneira-ci --filter status=running | grep -q .
+          }
+
+          live=""
+          for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8000/api/health/live > /dev/null; then
-              echo "Container is healthy after ${attempt}s"
+              echo "Container is live after ${attempt}s"
+              live=yes
+              break
+            fi
+            running || fail "Container exited during startup."
+            sleep 1
+          done
+          [ -n "$live" ] || fail "Container never became live within 30s."
+
+          for attempt in $(seq 1 180); do
+            if curl -fsS http://127.0.0.1:8000/api/health/ready > /dev/null; then
+              echo "Container is ready after ${attempt}s"
               docker rm -f roneira-ci
               exit 0
             fi
-            if ! docker ps -q --filter name=roneira-ci --filter status=running | grep -q .; then
-              echo "Container exited during startup. Logs:"
-              docker logs roneira-ci
-              docker rm -f roneira-ci
-              exit 1
-            fi
+            running || fail "Container exited while loading models."
             sleep 1
           done
-          echo "Container never became healthy. Logs:"
-          docker logs roneira-ci
-          docker rm -f roneira-ci
-          exit 1
+          fail "Container never became ready."

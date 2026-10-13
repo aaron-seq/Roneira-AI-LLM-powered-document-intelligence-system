@@ -48,7 +48,8 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 40s
+      # Models load in the background, so liveness is up almost immediately.
+      start_period: 15s
 
   frontend:
     build:

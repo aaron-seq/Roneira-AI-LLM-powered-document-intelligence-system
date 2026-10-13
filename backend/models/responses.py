@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ComponentHealth(BaseModel):
     """Health of a single dependency."""
 
-    status: str = Field(description="ok, degraded, or unavailable")
+    status: str = Field(description="ok, starting, degraded, or unavailable")
     detail: Optional[str] = Field(
         default=None, description="Why the component is not fully healthy"
     )
@@ -31,7 +31,7 @@ class HealthCheckResponse(BaseModel):
     "healthy" in that state hides exactly the failures worth paging on.
     """
 
-    status: str = Field(description="healthy, degraded, or unhealthy")
+    status: str = Field(description="healthy, starting, degraded, or unhealthy")
     version: str = Field(description="Application version")
     environment: str = Field(default="development")
     timestamp: datetime = Field(default_factory=datetime.utcnow)

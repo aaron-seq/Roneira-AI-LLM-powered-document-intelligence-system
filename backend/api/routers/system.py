@@ -99,6 +99,13 @@ async def health_check(
 
     if retrieval.embeddings_are_real:
         components["embeddings"] = ComponentHealth(status="ok")
+    elif retrieval.models_loading:
+        # Distinct from degraded: this resolves on its own, and searches
+        # arriving now wait for it rather than returning worse answers.
+        components["embeddings"] = ComponentHealth(
+            status="starting",
+            detail="Loading the embedding model; searches will wait for it.",
+        )
     else:
         components["embeddings"] = ComponentHealth(
             status="degraded",
@@ -129,6 +136,10 @@ async def health_check(
     statuses = {component.status for component in components.values()}
     if "unavailable" in statuses:
         overall = "unhealthy"
+    elif "starting" in statuses:
+        # Not degraded — nothing is missing, it is not all here yet. Reporting
+        # "degraded" during every boot would train operators to ignore it.
+        overall = "starting"
     elif "degraded" in statuses:
         overall = "degraded"
     else:
@@ -156,12 +167,26 @@ async def liveness() -> Dict[str, str]:
 @router.get("/health/ready", tags=["System"], summary="Readiness probe")
 async def readiness(
     db_manager: DatabaseManager = Depends(get_db_manager),
+    retrieval: RetrievalService = Depends(get_retrieval_service),
 ) -> Dict[str, Any]:
-    """Report whether this instance should receive traffic."""
+    """Report whether this instance should receive traffic.
+
+    Unlike liveness, this *does* gate on the embedding model. The model loads
+    in the background so the process can start answering immediately, and
+    until it finishes a search would block waiting for it — which is a slow
+    request, not a failed one, but not something to send traffic into when
+    another replica is ready. Failing readiness while passing liveness is
+    exactly the state the two probes exist to distinguish.
+    """
     if not await db_manager.health_check():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database unavailable",
+        )
+    if retrieval.models_loading:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Loading the embedding model",
         )
     return {"status": "ready"}
 

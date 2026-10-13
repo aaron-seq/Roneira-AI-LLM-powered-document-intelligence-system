@@ -59,8 +59,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      # First boot downloads the ~90MB embedding model before serving.
-      start_period: 180s
+      # The model downloads moved out of the startup path and into a
+      # background task, so liveness answers within a couple of seconds of
+      # the process starting. This no longer has to cover a ~170MB download;
+      # it only covers process start.
+      #
+      # Gate traffic on /api/health/ready instead, which does wait for the
+      # models — that is the probe a load balancer or orchestrator wants.
+      start_period: 30s
 
 volumes:
   app_data:

@@ -34,7 +34,12 @@ WORKERS = "1"
 ENABLE_OCR = "false"
 
 [healthCheck]
-path = "/api/health/live"
+# Readiness, not liveness: this check gates whether Railway routes traffic to
+# the instance, and an instance still loading the embedding model would hold
+# every search open until it finished. Readiness resolves either way — if the
+# model cannot be loaded at all, the service reports keyword-only matching and
+# becomes ready rather than hanging.
+path = "/api/health/ready"
 interval = 30
 timeout = 10
 

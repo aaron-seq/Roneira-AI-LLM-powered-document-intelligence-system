@@ -73,7 +73,19 @@ async def initialize_services(app=None) -> ServiceContainer:
 
     # One retrieval service, one embedding model, one vector store.
     retrieval_service = RetrievalService()
-    await retrieval_service.initialize()
+    if settings.require_real_embeddings:
+        # This deployment has said semantic search is mandatory, so a model
+        # that cannot be loaded is a startup failure. Deferring the load would
+        # turn that into a background exception nobody is waiting on, and the
+        # process would come up claiming to be healthy.
+        await retrieval_service.initialize()
+    else:
+        # Bring the vector store up, but leave the models. The load itself is
+        # started by start_background_model_load() once everything else is
+        # ready — see RetrievalService.start_model_load for why that has to be
+        # last. Requests that need embeddings wait for it; see
+        # RetrievalService.ensure_ready.
+        await retrieval_service.initialize_deferred()
 
     # One LLM client shared by document enrichment and chat, so a single
     # connection pool and one model-availability check serve both.
@@ -111,20 +123,83 @@ async def initialize_services(app=None) -> ServiceContainer:
     if app is not None:
         app.state.container = container
 
-    _publish_startup_metrics(settings, retrieval_service)
+    _publish_app_info(settings)
     return container
 
 
-def _publish_startup_metrics(settings, retrieval_service: RetrievalService) -> None:
-    """Seed the metrics registry with build and capability information."""
+def start_background_model_load(container: ServiceContainer) -> None:
+    """Begin the deferred embedding-model load.
+
+    Separate from ``initialize_services`` and called last, because a task is
+    only run when the event loop gets control: one created earlier would be
+    executed during the startup path's own awaits, which defeats the point.
+    See ``RetrievalService.start_model_load``.
+    """
+    # Start first: the reporter branches on whether there is a task to wait
+    # for, and would otherwise conclude the answer is already final.
+    container.retrieval_service.start_model_load()
+    _report_embedding_backend_when_known(container.retrieval_service)
+
+
+def _publish_app_info(settings) -> None:
+    """Seed the metrics registry with build information."""
     try:
         from backend.observability.metrics import get_metrics
 
-        metrics = get_metrics()
-        metrics.set_app_info(version=settings.version, environment=settings.environment)
-        metrics.set_embedding_backend_real(retrieval_service.embeddings_are_real)
+        get_metrics().set_app_info(
+            version=settings.version, environment=settings.environment
+        )
     except Exception as exc:  # pragma: no cover - metrics are best-effort
         logger.debug("Could not publish startup metrics: %s", exc)
+
+
+def _report_embedding_backend_when_known(retrieval_service: RetrievalService) -> None:
+    """Log and record which embedding backend is live, once that is settled.
+
+    With the load deferred, ``embeddings_are_real`` is False at the end of
+    startup merely because the model has not finished loading. Reporting then
+    would log the keyword-only warning on every boot and publish a metric
+    saying semantic search is off while it is in the middle of coming up.
+    """
+
+    def report() -> None:
+        if retrieval_service.embeddings_are_real:
+            return
+        logger.warning(
+            "Search is running in KEYWORD-ONLY mode: no embedding model is "
+            "loaded, so questions phrased differently from the source text "
+            "will not match. Install sentence-transformers for semantic "
+            "search, or set REQUIRE_REAL_EMBEDDINGS=true to make this fatal."
+        )
+
+    def publish() -> None:
+        try:
+            from backend.observability.metrics import get_metrics
+
+            get_metrics().set_embedding_backend_real(
+                retrieval_service.embeddings_are_real
+            )
+        except Exception as exc:  # pragma: no cover - metrics are best-effort
+            logger.debug("Could not publish embedding backend metric: %s", exc)
+
+    task = retrieval_service.model_load_task
+    if task is None:
+        # Loaded synchronously: the answer is already final.
+        report()
+        publish()
+        return
+
+    def _on_loaded(completed) -> None:
+        if completed.cancelled():
+            return
+        error = completed.exception()
+        if error is not None:
+            logger.error("Embedding model load failed: %s", error)
+            return
+        report()
+        publish()
+
+    task.add_done_callback(_on_loaded)
 
 
 async def cleanup_services(app=None) -> None:
