@@ -25,7 +25,30 @@ python-multipart==0.0.32
 # is the de-facto standard, actively maintained, and offers the same
 # encode/decode surface — the migration was three lines in auth_service.py.
 # The [crypto] extra preserves RS*/ES* support for anyone who sets ALGORITHM.
-PyJWT[crypto]==2.13.0
+#
+# 2.15.0, not 2.13.0. `pip-audit` reports thirteen advisories against 2.13.0.
+# Eleven are unreachable here — they need PyJWKClient, a JWK/JWKS, an
+# asymmetric key as the HMAC secret, or an allow-list that mixes HMAC with an
+# asymmetric algorithm, and this service does none of those: it calls
+# `jwt.decode(token, secret, algorithms=[one_algorithm])` and nothing else.
+#
+# Two are reachable on exactly that call, and were reproduced against the pin
+# before it was raised:
+#
+#   PYSEC-2026-4147 — a signature segment with non-Base64URL characters is
+#     accepted, so `token + "!!!!"` verifies and yields the same claims. Token
+#     malleability: anything treating the token string as an identifier (a
+#     revocation list, deduplication) can be bypassed. Fixed in 2.14.0.
+#   PYSEC-2026-4142 — `PyJWS._load()` translates only `ValueError`, so some
+#     malformed tokens raise an exception that is not a `PyJWTError`. Our
+#     handler catches `PyJWTError`, so that escapes as a 500 where a 401 is
+#     the correct answer. Fixed in 2.14.0.
+#
+# 2.15.0 rather than 2.14.0 because two of the unreachable advisories
+# (PYSEC-2026-4141, -4183) are only fixed there, and there is no reason to
+# stop one release short. Verified: 289 tests pass, including the 29 in
+# test_auth.py, and test_auth.py::TestTokenIntegrity pins the malleability fix.
+PyJWT[crypto]==2.15.0
 # Only pbkdf2_sha256 is used, which is pure Python inside passlib and needs no
 # compiled bcrypt backend — see backend/services/auth_service.py.
 passlib==1.7.4
@@ -38,6 +61,12 @@ aiosqlite==0.22.1
 # no CPython 3.13 wheels, so `pip install -r requirements.txt` tried to compile
 # it from source and failed on any machine without a C toolchain.
 asyncpg==0.31.0
+# Schema migrations. Previously pinned here while nothing imported it, and
+# removed for that reason; it is back because `migrations/` now exists and
+# `backend/core/database.py` applies revisions at startup. `create_all` only
+# ever created missing tables, so a new column reached a fresh database and
+# never an existing one.
+alembic==1.20.0
 
 # --- Retrieval ---------------------------------------------------------
 # chromadb 0.5.0 used `np.float_`, removed in NumPy 2, which forced `numpy<2`.
