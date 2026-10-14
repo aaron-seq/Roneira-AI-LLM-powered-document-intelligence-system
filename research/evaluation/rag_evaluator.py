@@ -13,14 +13,13 @@ This module implements Task 6 of the AI Developer Roadmap:
 
 import json
 import logging
-import statistics
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple, Callable
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-from collections import Counter
-import re
 import math
+import statistics
+from collections import Counter
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +296,7 @@ class RAGEvaluator:
     def evaluate_retrieval(
         self,
         samples: List[EvaluationSample],
-        k_values: List[int] = [1, 3, 5, 10],
+        k_values: Sequence[int] = (1, 3, 5, 10),
     ) -> Dict[str, Any]:
         """
         Evaluate retrieval quality.
@@ -340,9 +339,7 @@ class RAGEvaluator:
             reciprocal_ranks.append(rr)
 
             # NDCG
-            ndcg = self._calculate_ndcg(
-                retrieved, relevant_set, sample.relevance_scores
-            )
+            ndcg = self._calculate_ndcg(retrieved, relevant_set, sample.relevance_scores)
             ndcg_scores.append(ndcg)
 
         return {
@@ -407,9 +404,7 @@ class RAGEvaluator:
             bleu_scores.append(bleu)
 
             # ROUGE-L score (simplified)
-            rouge = self._calculate_rouge_l(
-                sample.expected_answer, sample.actual_answer
-            )
+            rouge = self._calculate_rouge_l(sample.expected_answer, sample.actual_answer)
             rouge_scores.append(rouge)
 
             # Faithfulness (context-based)
@@ -601,9 +596,7 @@ class RAGEvaluator:
             # Estimate tokens (rough approximation)
             query_tokens = len(sample.query.split()) * 1.3
             answer_tokens = len((sample.actual_answer or "").split()) * 1.3
-            context_tokens = sum(
-                len(c.split()) * 1.3 for c in sample.retrieved_contexts
-            )
+            context_tokens = sum(len(c.split()) * 1.3 for c in sample.retrieved_contexts)
             total_tokens += query_tokens + answer_tokens + context_tokens
 
         avg_tokens = total_tokens / len(samples) if samples else 0
@@ -617,7 +610,7 @@ class RAGEvaluator:
     def evaluate_with_llm_judge(
         self,
         samples: List[EvaluationSample],
-        criteria: List[str] = None,
+        criteria: Optional[List[str]] = None,
     ) -> Dict[str, float]:
         """
         Evaluate using LLM as judge.
@@ -794,9 +787,7 @@ Return only the numeric score.
             insights.append("Top-1 retrieval is highly accurate")
 
         if metrics.faithfulness > metrics.answer_relevancy:
-            insights.append(
-                "Consider improving query understanding for better relevancy"
-            )
+            insights.append("Consider improving query understanding for better relevancy")
 
         return insights
 

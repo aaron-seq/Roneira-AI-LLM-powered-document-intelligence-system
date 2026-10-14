@@ -17,7 +17,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.data_catalog import DataSourceCatalog
+from research.data_catalog import DataSourceCatalog
 
 
 def generate_catalog_dashboard(catalog, output_path: str) -> str:

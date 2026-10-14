@@ -6,17 +6,17 @@ coordination and intelligent document processing.
 """
 
 from .agent_orchestrator import (
+    Agent,
     AgentOrchestrator,
     AgentState,
-    Agent,
     AgentType,
     WorkflowResult,
 )
 
 __all__ = [
+    "Agent",
     "AgentOrchestrator",
     "AgentState",
-    "Agent",
     "AgentType",
     "WorkflowResult",
 ]

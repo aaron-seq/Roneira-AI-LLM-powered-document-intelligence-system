@@ -65,6 +65,22 @@ class SummaryConfig:
         }
 
 
+@dataclass(frozen=True)
+class ExtractiveSummary:
+    """An extractive summary, and whether it actually summarised anything.
+
+    ``is_verbatim`` is the distinction the caller cannot otherwise make. When a
+    document has fewer sentences than the requested summary length there is
+    nothing to select, so the text is returned unchanged — correct, but it must
+    not be presented as a summary of itself. Invoices, forms and receipts hit
+    this constantly: they are tabular, not prose, so the sentence splitter
+    finds almost no boundaries in them.
+    """
+
+    text: str
+    is_verbatim: bool
+
+
 @dataclass
 class SummaryResult:
     """Result of document summarization.
@@ -152,7 +168,10 @@ class ExtractiveSummarizer:
         num_sentences: int = 5,
         focus_keywords: Optional[List[str]] = None,
     ) -> str:
-        """Extract most important sentences.
+        """Extract the most important sentences.
+
+        Returns the summary text only. Callers that need to know whether the
+        text was actually compressed should use :meth:`summarize_detailed`.
 
         Args:
             text: Document text to summarize.
@@ -162,9 +181,30 @@ class ExtractiveSummarizer:
         Returns:
             Extractive summary.
         """
+        return self.summarize_detailed(text, num_sentences, focus_keywords).text
+
+    def summarize_detailed(
+        self,
+        text: str,
+        num_sentences: int = 5,
+        focus_keywords: Optional[List[str]] = None,
+    ) -> ExtractiveSummary:
+        """Extract the most important sentences, reporting what was done.
+
+        Args:
+            text: Document text to summarize.
+            num_sentences: Number of sentences to extract.
+            focus_keywords: Keywords to boost sentence scores.
+
+        Returns:
+            The summary, flagged ``is_verbatim`` when the document was too
+            short to compress and is returned unchanged.
+        """
         sentences = self._split_sentences(text)
         if len(sentences) <= num_sentences:
-            return text
+            # Nothing to select from. Returning the text is right; claiming it
+            # is a summary is not.
+            return ExtractiveSummary(text=text, is_verbatim=True)
 
         # Score sentences
         word_freq = self._calculate_word_frequencies(text)
@@ -180,7 +220,9 @@ class ExtractiveSummarizer:
         scores.sort(key=lambda x: x[2], reverse=True)
         selected = sorted(scores[:num_sentences], key=lambda x: x[0])
 
-        return " ".join(sent for _, sent, _ in selected)
+        return ExtractiveSummary(
+            text=" ".join(sent for _, sent, _ in selected), is_verbatim=False
+        )
 
     def _split_sentences(self, text: str) -> List[str]:
         """Split text into sentences."""

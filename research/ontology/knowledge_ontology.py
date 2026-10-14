@@ -14,13 +14,12 @@ This module implements Task 3 of the AI Developer Roadmap:
 
 import json
 import logging
-from datetime import datetime
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Set, Iterator
-from dataclasses import dataclass, field, asdict
-from enum import Enum
-from collections import defaultdict
 import uuid
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -569,12 +568,12 @@ class KnowledgeOntology:
             for relation in self.get_relations_from(current_id):
                 if relation.target_id not in visited:
                     visited.add(relation.target_id)
-                    queue.append(path + [relation.target_id])
+                    queue.append([*path, relation.target_id])
 
             for relation in self.get_relations_to(current_id):
                 if relation.source_id not in visited:
                     visited.add(relation.source_id)
-                    queue.append(path + [relation.source_id])
+                    queue.append([*path, relation.source_id])
 
         return None
 

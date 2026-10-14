@@ -118,6 +118,76 @@ class TestIdentity:
         assert response.status_code == 401
 
 
+class TestTokenIntegrity:
+    """A token is valid exactly as issued, or not at all.
+
+    PyJWT 2.13.0 accepted compact signature segments containing characters
+    outside the Base64URL alphabet (PYSEC-2026-4147), so appending `!!!!` to a
+    valid token produced a *different string* that still verified and returned
+    the same claims. The claims were not forgeable, but any code treating the
+    token string as an identifier — a revocation list, deduplication, a
+    per-token counter — could be bypassed by mutating it. Fixed in 2.14.0;
+    this pins the behaviour so a downgrade of the dependency fails here rather
+    than silently reopening it.
+    """
+
+    # No whitespace suffix here: HTTP header parsing strips trailing spaces
+    # before the value reaches the application, so " " is not a mutated token,
+    # it is the same token.
+    @pytest.mark.parametrize("suffix", ["!!!!", "====", "....", "~~", "??"])
+    def test_a_token_with_trailing_junk_is_rejected(self, client, auth_token, suffix):
+        response = client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {auth_token}{suffix}"},
+        )
+        assert response.status_code == 401
+
+    def test_the_unmodified_token_still_works(self, client, auth_token):
+        """The guard above must not have been achieved by rejecting everything."""
+        response = client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {auth_token}"}
+        )
+        assert response.status_code == 200
+
+    # Non-ASCII is absent on purpose: an HTTP header cannot carry it, so httpx
+    # refuses to send it and the server is never reached. The service-level
+    # equivalent is covered by test_non_ascii_is_rejected_at_the_service below.
+    @pytest.mark.parametrize(
+        "malformed",
+        [
+            "not-a-token",
+            "only.two",
+            "a.b.c.d",
+            "...",
+            "..",
+            "eyJhbGciOiJIUzI1NiJ9..",
+        ],
+    )
+    def test_malformed_tokens_are_401_not_500(self, client, malformed):
+        """A bad token is the client's error, never a server crash.
+
+        PYSEC-2026-4142: `PyJWS._load()` translated only `ValueError`, so some
+        malformed inputs raised something that was not a `PyJWTError` — which
+        the handler does not catch, turning a 401 into an unhandled 500.
+        """
+        response = client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {malformed}"}
+        )
+        assert response.status_code == 401, response.text
+
+    @pytest.mark.parametrize("token", ["ÿÿÿ.ÿÿÿ.ÿÿÿ", "ä.ö.ü", "\x00.\x00.\x00"])
+    def test_non_ascii_is_rejected_at_the_service(self, app, token):
+        """Verified below HTTP, where such a token can actually arrive.
+
+        An HTTP header cannot carry these bytes, so the API cannot be the test
+        surface — but a token reaching ``verify_token`` from a websocket query
+        parameter or another caller can.
+        """
+        auth = app.state.container.auth_service
+
+        assert auth.verify_token(token) is None
+
+
 class TestPublicEndpoints:
     """Endpoints infrastructure must reach without credentials."""
 

@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.evaluation import (
+from research.evaluation import (
     RAGEvaluator,
     EvaluationResult,
     EvaluationMetrics,
@@ -21,7 +21,7 @@ from src.evaluation import (
     MetricsDashboard,
     ChartType,
 )
-from src.evaluation.rag_evaluator import EvaluationSample
+from research.evaluation.rag_evaluator import EvaluationSample
 
 
 class TestRAGEvaluator:

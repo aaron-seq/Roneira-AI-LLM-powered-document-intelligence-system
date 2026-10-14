@@ -11,17 +11,17 @@ This module completes Task 2 of the AI Developer Roadmap by providing:
 - Comprehensive statistics reporting
 """
 
+import hashlib
 import json
-import random
 import logging
+import random
+from collections import Counter, defaultdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Set
-from dataclasses import dataclass, field, asdict
-from collections import Counter, defaultdict
-import hashlib
+from typing import Any, Dict, List, Optional, Tuple
 
-from .synthetic_data_generator import QAPair, Difficulty, QuestionType
+from .synthetic_data_generator import QAPair
 
 logger = logging.getLogger(__name__)
 
@@ -271,7 +271,7 @@ class DatasetValidator:
         # Split each group proportionally
         split = DatasetSplit()
 
-        for key, group_data in groups.items():
+        for _key, group_data in groups.items():
             random.shuffle(group_data)
             n = len(group_data)
             train_end = int(n * ratios[0])
@@ -351,9 +351,7 @@ class DatasetValidator:
         # Calculate leakage score
         total_val_test = len(dataset.validation) + len(dataset.test)
         if total_val_test > 0:
-            leak_count = len(report.duplicate_questions) + len(
-                report.duplicate_contexts
-            )
+            leak_count = len(report.duplicate_questions) + len(report.duplicate_contexts)
             report.leakage_score = min(1.0, leak_count / total_val_test)
 
         report.has_leakage = report.leakage_score > 0
@@ -362,9 +360,14 @@ class DatasetValidator:
         return report
 
     def _hash_text(self, text: str) -> str:
-        """Create hash of normalized text."""
+        """Create hash of normalized text.
+
+        Used to spot duplicate samples, not as a security primitive, so md5's
+        collision weakness does not matter here — `usedforsecurity=False` says
+        that to both the reader and the linter.
+        """
         normalized = text.lower().strip()
-        return hashlib.md5(normalized.encode()).hexdigest()
+        return hashlib.md5(normalized.encode(), usedforsecurity=False).hexdigest()
 
     def calculate_quality_metrics(self, pairs: List[QAPair]) -> QualityMetrics:
         """
@@ -411,7 +414,7 @@ class DatasetValidator:
         metrics.avg_answer_length = sum(len(p.answer) for p in pairs) / len(pairs)
 
         # Unique question ratio
-        unique_questions = len(set(p.question for p in pairs))
+        unique_questions = len({p.question for p in pairs})
         metrics.unique_question_ratio = unique_questions / len(pairs)
 
         return metrics

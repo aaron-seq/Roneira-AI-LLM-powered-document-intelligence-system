@@ -70,10 +70,29 @@ def app(workspace: Path):
 
 @pytest.fixture(scope="session")
 def client(app) -> Iterator:
-    """A TestClient that runs the real startup and shutdown lifespan."""
+    """A TestClient that runs the real startup and shutdown lifespan.
+
+    The embedding model load is driven to completion before any test runs.
+    Production defers it — the server accepts connections while it loads, and
+    ``/api/health/ready`` returns 503 until it settles — but a session-scoped
+    app whose load may or may not have finished makes every assertion about
+    readiness depend on test ordering. Settling it here gives the steady state
+    that nearly all tests are about; ``test_startup_latency.py`` reproduces the
+    load window deliberately rather than relying on catching it.
+    """
     from fastapi.testclient import TestClient
 
     with TestClient(app) as test_client:
+        token = test_client.post(
+            "/api/auth/token", data={"username": "demo", "password": "demo"}
+        ).json()["access_token"]
+        # A search is the shortest path through RetrievalService.ensure_ready,
+        # which is what a real first request would also go through.
+        test_client.post(
+            "/api/search",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"query": "settle the model load", "top_k": 1},
+        )
         yield test_client
 
 

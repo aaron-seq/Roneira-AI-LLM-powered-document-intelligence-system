@@ -21,18 +21,48 @@ all leave retrieval working on its existing ranking and say why.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
-try:
-    from sentence_transformers import CrossEncoder
+#: Imported on first use, not at module scope: sentence-transformers pulls in
+#: torch and transformers and takes ~4s, which was being paid during ``import
+#: backend.main`` — ahead of the listening socket. See the matching note in
+#: ``embedding_service``.
+_CROSS_ENCODER_AVAILABLE: Optional[bool] = None
+_CrossEncoder: Any = None
 
-    CROSS_ENCODER_AVAILABLE = True
-except ImportError:  # pragma: no cover - optional dependency
-    CrossEncoder = None  # type: ignore[assignment]
-    CROSS_ENCODER_AVAILABLE = False
+
+def _load_cross_encoder() -> bool:
+    """Import the cross-encoder, reporting whether it is usable.
+
+    Catches ``Exception`` for the same reason the embedding service does: a
+    broken install raises more than ``ImportError``, and an exception escaping
+    a background task leaves readiness wedged at 503 rather than degrading.
+    """
+    global _CROSS_ENCODER_AVAILABLE, _CrossEncoder
+
+    if _CROSS_ENCODER_AVAILABLE is not None:
+        return _CROSS_ENCODER_AVAILABLE
+
+    try:
+        module = importlib.import_module("sentence_transformers")
+        _CrossEncoder = module.CrossEncoder
+        _CROSS_ENCODER_AVAILABLE = True
+    except ImportError:  # pragma: no cover - optional dependency
+        _CROSS_ENCODER_AVAILABLE = False
+    except Exception as exc:
+        _CROSS_ENCODER_AVAILABLE = False
+        logger.error(
+            "sentence-transformers is installed but could not be imported: %s: %s",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
+    return _CROSS_ENCODER_AVAILABLE
+
 
 DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
@@ -50,17 +80,35 @@ class Reranker:
         self._model = None
         self._reason: Optional[str] = None if enabled else "reranking is disabled"
         self._initialized = False
+        #: Serialises loading, for the same reason the embedding service has
+        #: one: startup loads in the background, so a request can arrive
+        #: mid-load. The flag alone was not enough — it was set *before* the
+        #: download, so a second caller saw "initialized" and went on to rank
+        #: with ``_model`` still None, silently skipping reranking.
+        self._load_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
-        """Load the model, degrading to a no-op if it cannot be had."""
-        if self._initialized:
-            return
+        """Load the model, degrading to a no-op if it cannot be had.
+
+        Idempotent, and safe to call concurrently.
+        """
+        async with self._load_lock:
+            if self._initialized:
+                return
+            await self._load()
+
+    async def _load(self) -> None:
+        """Load the cross-encoder, or record why there is not one."""
         self._initialized = True
 
         if not self._enabled:
             return
 
-        if not CROSS_ENCODER_AVAILABLE:
+        loop = asyncio.get_running_loop()
+
+        # The import is itself expensive (~4s), so it goes to the executor
+        # along with the load.
+        if not await loop.run_in_executor(None, _load_cross_encoder):
             self._degrade(
                 "sentence-transformers is not installed, so passages are ranked "
                 "by embedding similarity alone"
@@ -70,9 +118,8 @@ class Reranker:
         try:
             # Loading pulls the model on first use and is CPU-bound; keep it
             # off the event loop, as the embedding service does.
-            loop = asyncio.get_running_loop()
             self._model = await loop.run_in_executor(
-                None, lambda: CrossEncoder(self.model_name)
+                None, lambda: _CrossEncoder(self.model_name)
             )
             self._reason = None
             logger.info("Reranker initialized with '%s'", self.model_name)

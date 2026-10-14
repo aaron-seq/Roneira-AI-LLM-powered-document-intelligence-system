@@ -11,16 +11,15 @@ This module completes Task 1 of the AI Developer Roadmap by providing:
 - Quality report generation
 """
 
-import os
 import json
 import logging
+import re
 import statistics
+from collections import Counter
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
-from dataclasses import dataclass, field, asdict
-from collections import Counter
-import re
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -240,9 +239,7 @@ class DataProfiler:
                     report.column_profiles.append(profile)
 
                 # Calculate quality dimensions
-                report.completeness = self._calculate_completeness(
-                    report.column_profiles
-                )
+                report.completeness = self._calculate_completeness(report.column_profiles)
                 report.consistency = self._calculate_consistency(report.column_profiles)
                 report.validity = self._calculate_validity(report.column_profiles)
                 report.accuracy = self._estimate_accuracy(report.column_profiles)
@@ -254,7 +251,7 @@ class DataProfiler:
                 report.statistics = self._calculate_statistics(report)
 
         except Exception as e:
-            report.issues.append(f"Error profiling CSV: {str(e)}")
+            report.issues.append(f"Error profiling CSV: {e!s}")
             logger.error(f"Error profiling {path}: {e}")
 
         self.profiles_cache[source_id] = report
@@ -300,10 +297,10 @@ class DataProfiler:
             report.timeliness = self._assess_timeliness(path)
 
         except json.JSONDecodeError as e:
-            report.issues.append(f"Invalid JSON: {str(e)}")
+            report.issues.append(f"Invalid JSON: {e!s}")
             report.validity = 0.0
         except Exception as e:
-            report.issues.append(f"Error profiling JSON: {str(e)}")
+            report.issues.append(f"Error profiling JSON: {e!s}")
 
         self.profiles_cache[source_id] = report
         return report
@@ -342,7 +339,7 @@ class DataProfiler:
             report.timeliness = self._assess_timeliness(path)
 
         except Exception as e:
-            report.issues.append(f"Error profiling text: {str(e)}")
+            report.issues.append(f"Error profiling text: {e!s}")
 
         self.profiles_cache[source_id] = report
         return report
@@ -369,10 +366,8 @@ class DataProfiler:
         """Profile a single column of data."""
         total = len(values)
         null_count = sum(1 for v in values if v is None or v == "" or v == "null")
-        non_null_values = [
-            v for v in values if v is not None and v != "" and v != "null"
-        ]
-        unique_values = set(str(v) for v in non_null_values)
+        non_null_values = [v for v in values if v is not None and v != "" and v != "null"]
+        unique_values = {str(v) for v in non_null_values}
 
         profile = ColumnProfile(
             name=name,
@@ -541,9 +536,7 @@ class DataProfiler:
             },
         }
 
-    def generate_summary_report(
-        self, reports: List[DataQualityReport]
-    ) -> Dict[str, Any]:
+    def generate_summary_report(self, reports: List[DataQualityReport]) -> Dict[str, Any]:
         """Generate summary report across multiple data sources."""
         if not reports:
             return {"error": "No reports provided"}

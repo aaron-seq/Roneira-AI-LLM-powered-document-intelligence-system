@@ -27,7 +27,11 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/health/live
+    # Readiness, not liveness: Render uses this to decide when a deploy goes
+    # live, and an instance still loading the embedding model would hold every
+    # search open. Readiness resolves either way — a model that cannot be
+    # loaded leaves the service ready and reporting keyword-only matching.
+    healthCheckPath: /api/health/ready
     envVars:
       - key: ENVIRONMENT
         value: production

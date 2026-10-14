@@ -10,11 +10,10 @@ for metrics dashboards and proof-of-work documentation.
 
 import json
 import logging
-from datetime import datetime
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
-from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -235,13 +234,13 @@ class MetricsDashboard:
             --dark-color: #1a1a2e;
             --light-color: #f8f9fa;
         }}
-        
+
         * {{
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }}
-        
+
         body {{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -249,12 +248,12 @@ class MetricsDashboard:
             min-height: 100vh;
             padding: 2rem;
         }}
-        
+
         .dashboard-header {{
             text-align: center;
             margin-bottom: 3rem;
         }}
-        
+
         .dashboard-header h1 {{
             font-size: 2.5rem;
             background: linear-gradient(135deg, #4285f4, #34a853);
@@ -262,12 +261,12 @@ class MetricsDashboard:
             -webkit-text-fill-color: transparent;
             margin-bottom: 0.5rem;
         }}
-        
+
         .dashboard-header p {{
             color: #888;
             font-size: 1rem;
         }}
-        
+
         .dashboard-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
@@ -275,7 +274,7 @@ class MetricsDashboard:
             max-width: 1400px;
             margin: 0 auto;
         }}
-        
+
         .card {{
             background: rgba(255, 255, 255, 0.05);
             border-radius: 16px;
@@ -284,12 +283,12 @@ class MetricsDashboard:
             border: 1px solid rgba(255, 255, 255, 0.1);
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }}
-        
+
         .card:hover {{
             transform: translateY(-5px);
             box-shadow: 0 10px 40px rgba(66, 133, 244, 0.2);
         }}
-        
+
         .card-title {{
             font-size: 1.25rem;
             margin-bottom: 1rem;
@@ -297,32 +296,32 @@ class MetricsDashboard:
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             padding-bottom: 0.5rem;
         }}
-        
+
         .chart-container {{
             position: relative;
             height: 300px;
         }}
-        
+
         table {{
             width: 100%;
             border-collapse: collapse;
         }}
-        
+
         th, td {{
             padding: 0.75rem;
             text-align: left;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }}
-        
+
         th {{
             background: rgba(66, 133, 244, 0.2);
             font-weight: 600;
         }}
-        
+
         tr:hover {{
             background: rgba(255, 255, 255, 0.05);
         }}
-        
+
         .grade {{
             display: inline-block;
             padding: 0.25rem 0.75rem;
@@ -330,20 +329,20 @@ class MetricsDashboard:
             font-weight: bold;
             font-size: 0.875rem;
         }}
-        
+
         .grade-A {{ background: #28a745; color: #fff; }}
         .grade-B {{ background: #17a2b8; color: #fff; }}
         .grade-C {{ background: #ffc107; color: #000; }}
         .grade-D {{ background: #fd7e14; color: #000; }}
         .grade-F {{ background: #dc3545; color: #fff; }}
-        
+
         .footer {{
             text-align: center;
             margin-top: 3rem;
             color: #666;
             font-size: 0.875rem;
         }}
-        
+
         @media (max-width: 768px) {{
             .dashboard-grid {{
                 grid-template-columns: 1fr;
@@ -356,17 +355,17 @@ class MetricsDashboard:
         <h1>{self.title}</h1>
         <p>Generated: {self.metadata["created_at"]}</p>
     </div>
-    
+
     <div class="dashboard-grid">
         {charts_html}
         {tables_html}
     </div>
-    
+
     <div class="footer">
         <p>AI Developer Roadmap - Task 6: Accuracy Evaluation</p>
         <p>Roneira Document Intelligence System</p>
     </div>
-    
+
     <script>
         {self._generate_chart_scripts()}
     </script>
@@ -500,7 +499,7 @@ class MetricsDashboard:
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {{
-                            legend: {{ 
+                            legend: {{
                                 labels: {{ color: '#fff' }},
                                 position: 'right'
                             }}

@@ -7,16 +7,16 @@ and visualization for AI document intelligence systems.
 
 from .knowledge_ontology import (
     KnowledgeOntology,
+    NodeType,
     OntologyNode,
     OntologyRelation,
-    NodeType,
     RelationType,
 )
 
 __all__ = [
     "KnowledgeOntology",
+    "NodeType",
     "OntologyNode",
     "OntologyRelation",
-    "NodeType",
     "RelationType",
 ]

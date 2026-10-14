@@ -16,7 +16,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
-from backend.api.dependencies import cleanup_services, initialize_services
+from backend.api.dependencies import (
+    cleanup_services,
+    initialize_services,
+    start_background_model_load,
+)
 from backend.api.middleware import (
     CorrelationIdMiddleware,
     MetricsMiddleware,
@@ -58,15 +62,12 @@ async def application_lifespan(app: FastAPI):
         logger.exception("Startup failed")
         raise
 
-    if not container.retrieval_service.embeddings_are_real:
-        logger.warning(
-            "Search is running in KEYWORD-ONLY mode: no embedding model is "
-            "loaded, so questions phrased differently from the source text "
-            "will not match. Install sentence-transformers for semantic "
-            "search, or set REQUIRE_REAL_EMBEDDINGS=true to make this fatal."
-        )
+    # Last thing before serving: the embedding model load runs in the
+    # background, and a task started any earlier would be executed during the
+    # awaits above instead of alongside the running server.
+    start_background_model_load(container)
 
-    logger.info("Startup complete")
+    logger.info("Startup complete; accepting connections")
     try:
         yield
     finally:

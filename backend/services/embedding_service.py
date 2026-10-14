@@ -7,6 +7,7 @@ with support for caching and batch processing.
 
 import asyncio
 import hashlib
+import importlib
 import logging
 import math
 import re
@@ -18,18 +19,69 @@ logger = logging.getLogger(__name__)
 #: Word-ish tokens for the lexical fallback vectorizer.
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
-# Try to import sentence-transformers, provide fallback
-try:
-    from sentence_transformers import SentenceTransformer
+#: ``True``/``False`` once the import has been attempted, ``None`` before.
+#:
+#: sentence-transformers is imported on first use rather than at module scope,
+#: and the difference is not small: importing it pulls in torch and
+#: transformers and takes ~4s. That cost was paid during ``import
+#: backend.main`` — before uvicorn constructed the application, let alone ran
+#: its lifespan — so no amount of deferring the model *load* could reach it. It
+#: accounted for most of the time before the service answered anything.
+#:
+#: The import still happens eagerly relative to the first embedding: the
+#: background load started at startup triggers it within milliseconds of the
+#: server coming up. It is simply no longer in front of the listening socket.
+_SENTENCE_TRANSFORMERS_AVAILABLE: Optional[bool] = None
+_SentenceTransformer: Any = None
 
-    SENTENCE_TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    SENTENCE_TRANSFORMERS_AVAILABLE = False
-    SentenceTransformer = None
-    logger.warning(
-        "sentence-transformers not installed. "
-        "Install with: pip install sentence-transformers"
-    )
+
+#: Why the import failed, when it did. Carried out of the import so the
+#: degraded state can say something more useful than "not installed".
+_IMPORT_FAILURE: Optional[str] = None
+
+
+def _load_sentence_transformers() -> bool:
+    """Import sentence-transformers, reporting whether it is usable.
+
+    Idempotent and cached: the answer cannot change within a process, and the
+    import is far too expensive to retry per call.
+
+    Catches ``Exception``, not just ``ImportError``. A broken installation
+    raises other things — an ``OSError`` for a missing shared library, a
+    ``RuntimeError`` from an incompatible transitive package — and torch is
+    exactly the kind of dependency that does. While this import sat at module
+    scope, such a failure killed the process at import: loud, and impossible
+    to miss. Now that it runs inside a background task, an escaping exception
+    would instead leave the load never settling, so ``models_loading`` stays
+    true and ``/api/health/ready`` returns 503 for the life of the process —
+    a worse outcome than the keyword-only degradation this is supposed to
+    fall back to.
+    """
+    global _SENTENCE_TRANSFORMERS_AVAILABLE, _SentenceTransformer, _IMPORT_FAILURE
+
+    if _SENTENCE_TRANSFORMERS_AVAILABLE is not None:
+        return _SENTENCE_TRANSFORMERS_AVAILABLE
+
+    try:
+        module = importlib.import_module("sentence_transformers")
+        _SentenceTransformer = module.SentenceTransformer
+        _SENTENCE_TRANSFORMERS_AVAILABLE = True
+    except ImportError:
+        _SENTENCE_TRANSFORMERS_AVAILABLE = False
+        _IMPORT_FAILURE = (
+            "sentence-transformers is not installed (pip install sentence-transformers)"
+        )
+        logger.warning("%s", _IMPORT_FAILURE)
+    except Exception as exc:
+        _SENTENCE_TRANSFORMERS_AVAILABLE = False
+        _IMPORT_FAILURE = (
+            f"sentence-transformers is installed but could not be imported: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        # Loud, because this is a broken installation rather than an absent
+        # one, and the difference matters to whoever has to fix it.
+        logger.error("%s", _IMPORT_FAILURE, exc_info=True)
+    return _SENTENCE_TRANSFORMERS_AVAILABLE
 
 
 class EmbeddingModelUnavailable(RuntimeError):
@@ -130,7 +182,7 @@ class EmbeddingService:
         self.model_name = model_name or self.DEFAULT_MODEL
         self.use_cache = use_cache
         self.cache = EmbeddingCache(max_size=cache_size) if use_cache else None
-        self.model: Optional[SentenceTransformer] = None
+        self.model: Any = None
         self.is_initialized = False
         self._dimension: Optional[int] = None
         #: When True, initialization raises instead of degrading to the
@@ -138,27 +190,47 @@ class EmbeddingService:
         #: set this: pseudo-embeddings return confident nonsense.
         self.require_real_model = require_real_model
         self._degraded_reason: Optional[str] = None
+        #: Serialises loading. Startup kicks the load off in the background so
+        #: the server can accept connections immediately, which means a request
+        #: can arrive mid-load; without this, each one would start its own copy
+        #: of the ~4s sentence-transformers import and ~90MB model download.
+        self._load_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         """Load the embedding model.
+
+        Idempotent, and safe to call concurrently: callers that arrive while a
+        load is in flight wait for that load rather than starting another.
 
         Raises:
             EmbeddingModelUnavailable: if the model cannot be loaded and
                 ``require_real_model`` is set.
         """
-        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+        async with self._load_lock:
+            if self.is_initialized:
+                return
+            await self._load()
+
+    async def _load(self) -> None:
+        """Load the model, or record why it could not be loaded."""
+        loop = asyncio.get_running_loop()
+
+        # The import itself takes ~4s (torch, transformers), so it runs in an
+        # executor too rather than stalling the event loop that is now already
+        # serving requests.
+        if not await loop.run_in_executor(None, _load_sentence_transformers):
             self._degrade(
-                "sentence-transformers is not installed "
+                _IMPORT_FAILURE
+                or "sentence-transformers is not installed "
                 "(pip install sentence-transformers)"
             )
             return
 
         try:
             # Load in an executor: model loading is CPU-bound and would
-            # otherwise stall the event loop for seconds during startup.
-            loop = asyncio.get_running_loop()
+            # otherwise stall the event loop for seconds.
             self.model = await loop.run_in_executor(
-                None, lambda: SentenceTransformer(self.model_name)
+                None, lambda: _SentenceTransformer(self.model_name)
             )
             # Renamed in sentence-transformers 6.0; the old name still works
             # but warns. Fall back so a 2.x/3.x install keeps loading.
@@ -206,6 +278,16 @@ class EmbeddingService:
     def is_real(self) -> bool:
         """True when embeddings come from an actual model."""
         return self.model is not None
+
+    @property
+    def is_loading(self) -> bool:
+        """True while a model load is in flight.
+
+        Distinguishes "not loaded yet" from "loaded, and keyword-only" — the
+        first is temporary and worth waiting for, the second is the permanent
+        shape of this deployment. Health reporting needs to tell them apart.
+        """
+        return not self.is_initialized and self._load_lock.locked()
 
     @property
     def backend(self) -> str:

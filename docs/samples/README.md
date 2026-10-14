@@ -66,5 +66,25 @@ page references; you just do not get an answer written in sentences.
 ## Adding your own
 
 Drop files into this directory and re-run the loader. Supported formats are
-listed by `GET /api/documents/formats/supported`. Scanned images without a
-text layer are rejected with an explanation — OCR is not wired in yet.
+listed by `GET /api/documents/formats/supported`.
+
+Scanned pages and images are read with OCR, which needs the **tesseract**
+binary — a system package, not a pip install:
+
+```bash
+sudo apt-get install tesseract-ocr     # or: brew install tesseract
+```
+
+Without it, a scan is refused with that reason rather than indexed empty, and
+the document's metadata carries `ocr_unavailable_reason`.
+
+---
+
+## A note on the invoice text layer
+
+The ten invoice PDFs were generated with markup that reached their text layer:
+`<b>TOTAL DUE: $8385.00</b>` is literally in the page. Extraction strips a
+closed list of inline formatting tags (`b`, `i`, `u`, `em`, `strong`, `br`), so
+you will not see it in summaries, search results or exports — but it is in the
+files, and it is why that stripping exists. A document *about* markup keeps its
+content: only those six tags are removed.

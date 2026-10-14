@@ -114,8 +114,16 @@ we owe?" finds "total amount due"  install the embedding model:
 pip install sentence-transformers
 ```
 
-The first run downloads ~90MB. To make the service refuse to start rather than
-silently fall back, set `REQUIRE_REAL_EMBEDDINGS=true`.
+The first run downloads ~90MB. That happens in the background: the server
+accepts connections about 1.5s after starting, and `/api/health/ready` returns
+503 until the model is loaded. A search arriving in the meantime waits for it —
+it does not fall back to keyword matching, because a lexical vector and a model
+vector are not comparable, so mixing them would corrupt results rather than
+degrade them.
+
+To make the service refuse to start rather than silently fall back, set
+`REQUIRE_REAL_EMBEDDINGS=true`. That also loads the model before serving, since
+the whole point of the setting is that a missing model is a startup failure.
 
 The same package supplies the cross-encoder used to rerank results, which is
 the single largest accuracy gain available here — recall@1 goes from 69% to
@@ -225,6 +233,23 @@ Every document endpoint is scoped to the authenticated caller. A document
 belonging to another user returns `404`, not `403`  its existence is not
 confirmed either way.
 
+### Reading a document's summary
+
+`ai_insights.summary_source` says how the summary was produced, because the
+three cases are not interchangeable:
+
+| `summary_source` | What you are looking at |
+|---|---|
+| `llm` | Prose written about the document by the language model |
+| `extractive` | The document's own sentences, selected by word statistics — no model involved |
+| `verbatim` | The whole document, because it was too short to compress |
+
+`verbatim` is common and not a failure: invoices, forms and receipts are
+tabular rather than prose, so there are no sentences to rank. It exists because
+returning the document unchanged and calling it a summary told the reader
+something had been compressed when nothing had. The Markdown export heads that
+section "Document text" rather than "Summary" for the same reason.
+
 ### Reading a chat response
 
 ```jsonc
@@ -274,6 +299,7 @@ ones that change behaviour most:
 | `RERANK_RESULTS` | `true` | Cross-encoder reranking. Measured: recall@1 69% → 77%. Costs an ~80MB download and ~100ms/query |
 | `ENABLE_OCR` / `TESSERACT_PATH` | `true` / auto | Read scanned pages; point at the binary if it is not on `PATH` |
 | `DATABASE_URL` | SQLite | PostgreSQL is required for more than one worker |
+| `DB_AUTO_MIGRATE` | `true` | `false` where migrations are a deliberate deploy step rather than something a booting replica does |
 
 Setting `ENVIRONMENT=production` makes the service **refuse to start** with a
 placeholder secret key, authentication disabled, wildcard CORS, or debug on.
@@ -327,11 +353,13 @@ modules that are present but not wired in  is in
 ## Development
 
 ```bash
-pytest                              # 245 tests, 70% coverage gate
+pytest                              # 289 tests, 70% coverage gate
 pytest backend/tests/test_auth.py   # one file
-pytest tests/ --no-cov              # 130 tests for the src/ research modules
-ruff check backend/ && ruff format backend/
+pytest tests/ --no-cov              # 130 tests for the research/ modules
+ruff check backend/ research/ migrations/
+ruff format backend/ research/ migrations/
 mypy backend/core backend/api backend/repositories --ignore-missing-imports
+alembic upgrade head && alembic check   # migrations match the models
 
 npm run type-check && npm run lint && npm run build
 ```
@@ -386,10 +414,9 @@ Ordered by how much each would improve the product for a real user.
 
 ### After that
 
-- **Collections and tags.** Blocked on something structural rather than
-  difficult: the schema is created with `create_all` and there is no
-  migrations directory, so a new column reaches a fresh database and never an
-  existing one. Adding Alembic is the prerequisite, not the tagging UI.
+- **Collections and tags.** Unblocked: the schema is managed by Alembic now
+  (`migrations/`), so a new column reaches existing databases too. What is
+  left is the feature itself — a `collections` table, the API, and the UI.
 
 - **Redaction before indexing.** PII is already detected on every upload and
   reported on the document; the option to redact it *before* the text is

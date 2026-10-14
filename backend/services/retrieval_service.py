@@ -5,6 +5,7 @@ Provides high-level retrieval operations combining embeddings,
 vector search, and result ranking for RAG applications.
 """
 
+import asyncio
 import logging
 import math
 import re
@@ -13,7 +14,10 @@ from typing import Any, Dict, List, Optional
 
 from backend.common.helpers import PAGE_MARKER, strip_page_markers
 from backend.core.config import get_settings
-from backend.services.embedding_service import EmbeddingService
+from backend.services.embedding_service import (
+    EmbeddingModelUnavailable,
+    EmbeddingService,
+)
 from backend.services.reranking import Reranker
 from backend.services.text_splitter_service import TextSplitterService
 from backend.services.vector_store_service import (
@@ -131,15 +135,127 @@ class RetrievalService:
         )
 
         self.is_initialized = False
+        self._models_loaded = False
+        self._models_deferred = False
+        self._model_load_task: Optional["asyncio.Task[None]"] = None
 
     async def initialize(self) -> None:
-        """Initialize all component services."""
+        """Bring up the vector store and load the models."""
+        await self._initialize_store()
+        await self._load_models()
+
+    async def initialize_deferred(self) -> None:
+        """Bring the store up now and leave the models for later.
+
+        The two model loads — the embedding model and the reranking
+        cross-encoder — are the whole of this service's startup cost: ~4s to
+        import sentence-transformers (which pulls in torch and transformers)
+        and ~170MB to download on a cold cache. Doing that inside the ASGI
+        lifespan meant uvicorn did not accept a single connection until it
+        finished, during which even ``/api/health/live`` was unanswerable and
+        an orchestrator was entitled to conclude the container was dead.
+
+        The vector store still comes up synchronously. It is local and fast,
+        and it needs only the embedding *dimension*, which is known from the
+        model name without loading the model.
+
+        This does **not** start the load. Call ``start_model_load`` for that,
+        as the last thing before the application begins serving — see the note
+        there for why the ordering matters.
+        """
+        await self._initialize_store()
+        self._models_deferred = True
+
+    def start_model_load(self) -> "Optional[asyncio.Task[None]]":
+        """Start the deferred load in the background.
+
+        Call this *after* everything else the startup path awaits. A task is
+        only ever run when the loop gets control, so one created earlier in
+        the lifespan is executed during the lifespan's own ``await``s — the
+        LLM availability checks, in this application. The import that follows
+        is CPU-bound Python and holds the GIL, so the lifespan then waits for
+        most of it anyway and the deferral buys nothing. Measured: creating
+        the task before those checks left ``initialize_services`` taking
+        5.48s; created after them it takes ~0.6s.
+
+        Returns:
+            The task, or None when the models were loaded inline. Keep the
+            reference: a bare ``create_task`` handle can be garbage collected
+            mid-flight, and the caller needs somewhere to observe a failure.
+        """
+        if not self._models_deferred or self._models_loaded:
+            return None
+        if self._model_load_task is None:
+            self._model_load_task = asyncio.create_task(
+                self._load_models(), name="embedding-model-load"
+            )
+        return self._model_load_task
+
+    async def ensure_ready(self) -> None:
+        """Block until this service can embed text.
+
+        Every path that embeds calls this, and it waits rather than falling
+        back to lexical matching while a load is in flight. That is not
+        caution, it is correctness: a lexical vector and a model vector are
+        points in unrelated spaces, so a cosine similarity between them is
+        meaningless. Indexing a document with one and querying it with the
+        other would not degrade retrieval, it would corrupt it — and silently,
+        since every score still comes back a plausible-looking number.
+        """
+        await self._initialize_store()
+        await self._load_models()
+
+    async def ensure_store_ready(self) -> None:
+        """Open the vector store, without touching the models.
+
+        For dependents that need this service *present* rather than able to
+        embed — ``DocumentProcessorService`` and ``ChatService`` at startup.
+        Both used to call ``initialize()`` here, which loaded the models and
+        so undid the deferral on the line after it was chosen. They reach the
+        models through ``ensure_ready`` when they actually embed.
+        """
+        await self._initialize_store()
+
+    async def _initialize_store(self) -> None:
+        """Open the vector store. Cheap, local, and needed before anything."""
         if self.is_initialized:
             return
-        await self.embedding_service.initialize()
         await self.vector_store.initialize()
-        await self.reranker.initialize()
         self.is_initialized = True
+
+    async def _load_models(self) -> None:
+        """Load the embedding model and the reranker.
+
+        Both calls are individually idempotent and lock-guarded, so this is
+        safe to call from the background task and from a request that arrives
+        while that task is still running.
+        """
+        if self._models_loaded:
+            return
+
+        try:
+            await self.embedding_service.initialize()
+            await self.reranker.initialize()
+        except EmbeddingModelUnavailable:
+            # REQUIRE_REAL_EMBEDDINGS: the deployment asked for this to be
+            # fatal. Mark the load settled so readiness is not left pending
+            # either way, then let it propagate — on that setting the load is
+            # inline, so this reaches whoever started the application.
+            self._models_loaded = True
+            raise
+        except Exception:
+            # Anything else is a degradation, not a reason to hang. An
+            # exception escaping the background task would leave
+            # `models_loading` true forever, so /api/health/ready would return
+            # 503 for the life of the process rather than reporting the
+            # keyword-only fallback that is the documented behaviour.
+            logger.exception(
+                "Model load failed; continuing with whatever backend is available"
+            )
+            self._models_loaded = True
+            return
+
+        self._models_loaded = True
 
         if not self.embedding_service.is_real:
             logger.warning(
@@ -157,6 +273,22 @@ class RetrievalService:
     def embeddings_are_real(self) -> bool:
         """True when the index was built with a genuine embedding model."""
         return self.embedding_service.is_real
+
+    @property
+    def models_loading(self) -> bool:
+        """True while the models are deferred and not yet loaded.
+
+        True from the moment deferral is chosen, not from when the task
+        starts: readiness must not pass in the gap between the two, or an
+        orchestrator would route traffic to an instance that is about to make
+        every search wait.
+        """
+        return self._models_deferred and not self._models_loaded
+
+    @property
+    def model_load_task(self) -> "Optional[asyncio.Task[None]]":
+        """The background load, or None when models were loaded inline."""
+        return self._model_load_task
 
     async def index_document(
         self,
@@ -184,8 +316,7 @@ class RetrievalService:
         Returns:
             IndexingResult with indexing status and citation records.
         """
-        if not self.is_initialized:
-            await self.initialize()
+        await self.ensure_ready()
 
         try:
             chunks = self.text_splitter.split_document(
@@ -307,8 +438,7 @@ class RetrievalService:
         Returns:
             RetrievalContext with search results
         """
-        if not self.is_initialized:
-            await self.initialize()
+        await self.ensure_ready()
 
         threshold = self.min_score if min_score is None else min_score
 
@@ -462,6 +592,7 @@ class RetrievalService:
 
         return {
             "initialized": self.is_initialized,
+            "models_loading": self.models_loading,
             "chunk_size": self.chunk_size,
             "chunk_overlap": self.chunk_overlap,
             "min_score": self.min_score,
@@ -473,6 +604,19 @@ class RetrievalService:
 
     async def cleanup(self) -> None:
         """Clean up all resources."""
+        # A shutdown during startup leaves the load task running against
+        # services that are about to be torn down.
+        if self._model_load_task is not None and not self._model_load_task.done():
+            self._model_load_task.cancel()
+            try:
+                await self._model_load_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                logger.debug("Model load failed while shutting down: %s", exc)
+        self._model_load_task = None
+        self._models_loaded = False
+
         await self.embedding_service.cleanup()
         await self.vector_store.cleanup()
         self.is_initialized = False

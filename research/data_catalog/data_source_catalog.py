@@ -11,16 +11,14 @@ This module implements Task 1 of the AI Developer Roadmap:
 - Comprehensive catalog generation
 """
 
-import os
-import json
 import hashlib
+import json
 import logging
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Literal, Union
-from dataclasses import dataclass, field, asdict
 from enum import Enum
-import mimetypes
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -161,8 +159,12 @@ class DataSourceCatalog:
         logger.info(f"Initialized DataSourceCatalog: {catalog_name}")
 
     def _generate_source_id(self, location: str) -> str:
-        """Generate unique source ID from location."""
-        return hashlib.md5(location.encode()).hexdigest()[:12]
+        """Generate a stable short ID from a location.
+
+        An identifier, not a security primitive: the hash only has to be
+        deterministic and short.
+        """
+        return hashlib.md5(location.encode(), usedforsecurity=False).hexdigest()[:12]
 
     def _detect_format(self, file_path: str) -> DataFormat:
         """Detect data format from file extension."""
@@ -359,9 +361,7 @@ class DataSourceCatalog:
             if "overall" in source.quality_metrics:
                 quality_scores.append(source.quality_metrics["overall"])
 
-        avg_quality = (
-            sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
-        )
+        avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
 
         return CatalogStatistics(
             total_sources=len(self.sources),
@@ -425,7 +425,8 @@ class DataSourceCatalog:
             with open(output_path, "w", newline="", encoding="utf-8") as f:
                 if self.sources:
                     writer = csv.DictWriter(
-                        f, fieldnames=list(self.sources.values())[0].to_dict().keys()
+                        f,
+                        fieldnames=next(iter(self.sources.values())).to_dict().keys(),
                     )
                     writer.writeheader()
                     for source in self.sources.values():

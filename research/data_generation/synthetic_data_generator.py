@@ -12,15 +12,13 @@ This module implements Task 2 of the AI Developer Roadmap:
 """
 
 import json
-import random
-import hashlib
 import logging
-from datetime import datetime
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Literal, Callable
-from dataclasses import dataclass, field, asdict
-from enum import Enum
+import random
 import re
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +259,9 @@ class SyntheticDataGenerator:
         pairs = []
         pairs_per_doc = max(1, num_samples // len(documents))
 
-        for doc_idx, (document, category) in enumerate(zip(documents, categories)):
+        for doc_idx, (document, category) in enumerate(
+            zip(documents, categories, strict=True)
+        ):
             topics = self._extract_topics(document)
 
             for _ in range(pairs_per_doc):
@@ -491,7 +491,7 @@ class SyntheticDataGenerator:
         ]
 
         for pair in pairs:
-            for i in range(augmentation_factor):
+            for _i in range(augmentation_factor):
                 new_question = pair.question
 
                 # Apply random paraphrasing

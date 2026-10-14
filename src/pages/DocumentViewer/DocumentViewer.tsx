@@ -69,6 +69,18 @@ const CHANGE_COLOURS: Record<string, string> = {
     changed: '#f59e0b',
 };
 
+/**
+ * How the summary was produced. `verbatim` means the document was too short to
+ * compress, so what follows is the whole thing — saying "Summary" over it
+ * would claim work that was not done.
+ */
+const SUMMARY_CAPTIONS: Record<string, string> = {
+    llm: 'Written by the language model from the document.',
+    extractive:
+        "The document's own sentences, selected automatically — no model was involved.",
+    verbatim: 'Short enough to read in full, so nothing was summarised.',
+};
+
 const DocumentViewer = () => {
     const { documentId } = useParams();
     const [documentData, setDocumentData] = useState<DocumentDetail | null>(null);
@@ -302,11 +314,14 @@ const DocumentViewer = () => {
                 <Paper sx={{ p: 2, height: '70vh', overflowY: 'auto' }}>
                     {insights.summary && (
                         <>
-                            <Typography variant="h6">Summary</Typography>
+                            <Typography variant="h6">
+                                {insights.summary_source === 'verbatim'
+                                    ? 'Document text'
+                                    : 'Summary'}
+                            </Typography>
                             <Typography variant="caption" color="text.secondary">
-                                {insights.summary_source === 'extractive'
-                                    ? "The document's own sentences, selected automatically — no model was involved."
-                                    : 'Written by the language model from the document.'}
+                                {SUMMARY_CAPTIONS[insights.summary_source ?? 'llm'] ??
+                                    SUMMARY_CAPTIONS.llm}
                             </Typography>
                             <Typography paragraph sx={{ mt: 1 }}>
                                 {insights.summary}
