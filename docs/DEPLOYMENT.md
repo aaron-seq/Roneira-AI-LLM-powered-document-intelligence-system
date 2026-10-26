@@ -134,7 +134,7 @@ and did not copy `backend/` at all.
 ## Platform notes
 
 `deployment/` holds starting configurations for Railway and Render. Both run
-`uvicorn backend.main:app`, health-check `/api/health/live`, and are pinned to
+`uvicorn backend.main:app`, health-check `/api/health/ready`, and are pinned to
 one instance because the vector store and uploaded files live on the
 instance's own disk — a second replica would answer from an empty index.
 
@@ -180,6 +180,20 @@ service stays "up" and returns 200s while giving bad answers.
 Logs are JSON in production (text locally) and carry `correlation_id`, which
 matches the `X-Correlation-ID` response header. When a user reports an error,
 ask for that ID.
+
+The application logs to stdout. Use the Compose service name to inspect it:
+
+```bash
+docker compose logs --tail 100 --timestamps api
+docker compose logs --follow api
+```
+
+For production, use `docker compose -f docker-compose.production.yml logs api`.
+The Compose files do not configure log rotation. Set a bounded Docker logging
+policy before long-running use; for example, the
+[json-file driver's `max-size` and `max-file` options](https://docs.docker.com/engine/logging/drivers/json-file/).
+A host file mount is not required for stdout
+collection. Configure any external log collector for the data it will receive.
 
 ---
 

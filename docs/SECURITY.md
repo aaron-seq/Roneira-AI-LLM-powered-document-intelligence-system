@@ -122,7 +122,7 @@ Be clear-eyed about these:
 | **Prompt injection** | Text inside an uploaded document can attempt to steer the model. Retrieved chunks are fenced and labelled `[Source N: …]`, which helps but is not a guarantee. | Treat generated output as untrusted. Do not wire it to actions. |
 | **No document encryption at rest** | Retained originals and extracted text sit in plain files and database rows. | Use encrypted volumes/disks. Set `RETAIN_SOURCE_FILES=false` where originals must not persist. |
 | **No audit log** | There is no durable record of who read which document. | Ship the access logs (they carry correlation IDs and paths) to a retained store. |
-| **No PII detection on ingest** | `pii_detection_service.py` exists but is not wired in; documents are indexed as-is. | Do not upload documents whose PII must never be indexed. On the roadmap. |
+| **No PII redaction before indexing** | Ingest flags PII types/counts/offsets, but the original extracted text is still stored and indexed. | Do not upload documents whose PII must never be indexed. |
 | **Archive/zip contents unscanned** | `.docx` is a zip container; malformed archives are handed to `python-docx`. | Keep dependencies patched; run `pip-audit`. |
 | **No malware scanning** | Uploaded files are stored and can be downloaded back. | Scan the upload directory out of band if untrusted users can upload. |
 | **Token revocation** | JWTs are valid until they expire; there is no denylist. | Keep `ACCESS_TOKEN_EXPIRE_MINUTES` short. |
@@ -137,8 +137,10 @@ Be clear-eyed about these:
   analysis, and a SHA-256 of the upload.
 - **Where:** the configured database, `UPLOAD_DIRECTORY`, and
   `VECTOR_STORE_PATH` — all local by default.
-- **What leaves the machine:** nothing. Inference runs against Ollama on a host
-  you control. There is no telemetry and no third-party API call.
+- **Network use:** document context is sent to `OLLAMA_BASE_URL`, which is local
+  by default but can point to another host. Embedding/reranking libraries may
+  download model weights. Chroma product telemetry is disabled by the application;
+  this is not a network-isolation guarantee.
 - **Deletion:** `DELETE /api/documents/{id}` removes the database row, the
   chunk rows, the vectors, and the stored file. It is not a soft delete.
 - **Retention:** `SOURCE_RETENTION_DAYS` bounds how long originals live;
@@ -163,11 +165,9 @@ Both run in CI on every pull request.
 
 Please **do not** open a public issue for a security problem.
 
-Use GitHub's private vulnerability reporting on this repository
-(Security → Report a vulnerability), or contact the maintainer directly.
-Include reproduction steps and affected versions. You can expect an
-acknowledgement within a week.
-
-This is a personal open-source project, not a commercial product with an
-on-call rotation — please calibrate expectations accordingly, and do not use
-it for anything where a delayed patch would be unacceptable.
+GitHub private vulnerability reporting is currently disabled, and no
+repository-specific private contact or response-time commitment is documented.
+[Issue #56](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/issues/56)
+tracks the owner decision to establish a verified channel. Until one is
+available, share details only through a private contact method you already
+trust; do not put vulnerability details in public issues or PRs.

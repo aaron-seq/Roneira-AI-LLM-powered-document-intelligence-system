@@ -156,13 +156,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-# Local runtime artefacts
-uploads/
-processed/
+# Local runtime and report artefacts
 chroma_db/
-*.db
-*.sqlite3
-coverage.xml
-.coverage
 htmlcov/
-dist/
+
+# Recreated by scripts/demo_task1_catalog.py.
+/docs/roadmap/screenshots/task1_catalog_dashboard.html
+/docs/roadmap/screenshots/task1_quality_report.html
+/docs/roadmap/screenshots/task1_lineage_graph.html
