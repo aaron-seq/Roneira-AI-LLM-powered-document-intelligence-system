@@ -443,6 +443,7 @@ Known limitations are listed honestly in
 
 | Document | Contents |
 |---|---|
+| [Project status](docs/product/PROJECT-STATUS.md) | Branch consolidation, validation evidence, and continuation |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Request flow, data model, failure modes, unwired modules |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, what to change before real data, reporting |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production checklist, scaling, backups |
