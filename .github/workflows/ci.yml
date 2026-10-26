@@ -233,6 +233,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Frontend regression tests
+        run: npm test
+
       - name: Type check
         run: npm run type-check
 

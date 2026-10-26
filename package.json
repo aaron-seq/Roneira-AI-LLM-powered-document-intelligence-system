@@ -6,9 +6,10 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "eslint src --ext ts,tsx",
-    "lint:fix": "eslint src --ext ts,tsx --fix",
-    "type-check": "tsc --noEmit"
+    "lint": "eslint src tests/frontend --ext ts,tsx,mjs",
+    "lint:fix": "eslint src tests/frontend --ext ts,tsx,mjs --fix",
+    "type-check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/frontend/dashboard-indicators.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.11.1",

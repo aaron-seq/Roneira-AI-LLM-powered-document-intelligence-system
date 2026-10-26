@@ -16,7 +16,7 @@ ruff format --check backend/ research/ migrations/
 mypy backend/core backend/api backend/repositories --ignore-missing-imports --no-strict-optional --follow-imports=silent
 alembic upgrade head
 alembic check
-npm run type-check && npm run lint && npm run build
+npm test && npm run type-check && npm run lint && npm run build
 ```
 
 Run migration commands against a disposable `DATABASE_URL`, never a shared

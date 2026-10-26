@@ -22,6 +22,9 @@ module.exports = {
     plugins: ['@typescript-eslint', 'react-refresh'],
     settings: { react: { version: 'detect' } },
     ignorePatterns: ['dist', 'node_modules', '.eslintrc.cjs', 'coverage'],
+    overrides: [
+        { files: ['tests/frontend/*.mjs'], env: { browser: false, node: true } },
+    ],
     rules: {
         'react-refresh/only-export-components': [
             'warn',

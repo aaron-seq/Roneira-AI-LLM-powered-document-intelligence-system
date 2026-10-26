@@ -13,6 +13,8 @@ Commands and the CI matrix live in
   its coverage is separate from the backend's 70% gate.
 - CI starts a real HTTP server for authenticated upload, processing, search,
   and anonymous-denial checks; the Docker job probes liveness and readiness.
+- `npm test` uses Node's built-in test runner for dashboard feedback and health
+  indicators; no frontend testing dependency is required.
 - A missing optional model/OCR binary may skip dependency-specific cases.
   Report those skips and distinguish cached/offline, simulated, and real
   integrations. There is no configured browser E2E suite or performance SLA.
