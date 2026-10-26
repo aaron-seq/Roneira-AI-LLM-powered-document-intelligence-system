@@ -58,7 +58,9 @@ is the guard.
 
 ### Startup sequence
 
-The order matters, and it is the result of measurement rather than taste:
+The order matters. Historical timings below were reported in
+[PR #48](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/pull/48)
+and were not rebenchmarked during cleanup:
 
 1. **Import.** `sentence_transformers` is imported lazily, not at module
    scope. Importing it pulls in torch and transformers and costs ~4s, and that
@@ -155,6 +157,11 @@ comparable number. Cross-encoder outputs are unbounded logits, not
 similarities; writing them into `score` would quietly break both.
 
 ### Measured
+
+The following sample evaluation was reported in
+[PR #41](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/pull/41).
+It was not rerun during cleanup; these figures describe that sample/model
+configuration, not a general accuracy guarantee.
 
 `scripts/eval_retrieval.py` asks 13 paraphrased questions whose correct source
 document is known, against the whole 22-document sample corpus. The questions
