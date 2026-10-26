@@ -58,7 +58,9 @@ is the guard.
 
 ### Startup sequence
 
-The order matters, and it is the result of measurement rather than taste:
+The order matters. Historical timings below were reported in
+[PR #48](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/pull/48)
+and were not rebenchmarked during cleanup:
 
 1. **Import.** `sentence_transformers` is imported lazily, not at module
    scope. Importing it pulls in torch and transformers and costs ~4s, and that
@@ -155,6 +157,11 @@ comparable number. Cross-encoder outputs are unbounded logits, not
 similarities; writing them into `score` would quietly break both.
 
 ### Measured
+
+The following sample evaluation was reported in
+[PR #41](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/pull/41).
+It was not rerun during cleanup; these figures describe that sample/model
+configuration, not a general accuracy guarantee.
 
 `scripts/eval_retrieval.py` asks 13 paraphrased questions whose correct source
 document is known, against the whole 22-document sample corpus. The questions
@@ -362,113 +369,39 @@ wildcard CORS or hosts, or `DEBUG=true`.
 
 ## Unwired modules
 
-There used to be a long list here. Each entry was either adopted or removed,
-because a module nobody imports is a module nobody runs — and code that has
-never run is not a head start. Wiring the entity extractor immediately turned
-up a regex that could not match (`\b` after `%`, so "a 15% increase" never
-fired), which is the kind of defect unexecuted code accumulates silently.
+`backend/training/` exports offline training-data/configuration utilities;
+it is not a training pipeline or an application request path. The optional
+`backend/observability/tracing.py` shim is also outside the normal coverage
+scope. Keep these explicit exports until their offline consumers are known.
 
-**Adopted** — now on the ingest path, with tests, and no longer excluded from
-the coverage gate:
+Entity extraction, PII flags, and extractive summaries are active through
+`services/document_insights.py`. Its PII adapter returns types, counts, and
+offsets rather than persisting matched personal values. Feedback uses the
+persisted `FeedbackRepository`, not in-memory service counters.
 
-| Module | What it provides |
-|---|---|
-| `services/entity_extraction_service.py` | Pattern-based entities on every document |
-| `services/pii_detection_service.py` | Personal data flagged at ingest |
-| `services/summarization_service.py` | Extractive summary when no LLM is reachable |
-
-They are reached through `services/document_insights.py`, a thin adapter that
-exists for one specific reason: `PIIDetectionService.generate_report` embeds
-the matched text itself, and persisting that would write detected national
-insurance and card numbers into the database and hand them back over the API.
-The adapter reports types, counts and offsets, never values.
-
-**Removed** — recoverable from git history if ever wanted:
-
-| Module | Why |
-|---|---|
-| `services/advanced_rag.py` | Ranking is now native (see [Ranking](#ranking)); the rest was unbuilt speculation |
-| `services/llm_providers/*`, `azure_service.py`, `free_llm_service.py` | Cloud provider abstractions, against a local-first product that promises no data leaves the host |
-| `services/cross_reference_service.py` | Document graphing, never called, would have added scikit-learn to the request path |
-| `services/request_batching.py`, `sse_stream.py` | Never called; streaming is still simulated |
-| `services/free_ocr_service.py` | Superseded by `common/ocr.py`, which does not need opencv, PyMuPDF or EasyOCR |
-| `common/utils.py` | Twenty-three lines nothing imported |
-
-Still unwired, and honestly so: `services/feedback_service.py` (the feedback
-router talks to the repository directly) and `training/*`, which is offline
-tooling rather than application code.
-
-The legacy `app/` tree — an older Azure-oriented implementation with its own
-config, authentication, database manager and services — has been removed,
-along with the root `config.py` that only it imported. It was what the
-Dockerfile's production stage once ran, which is how production and
-development ended up as two different applications. That was fixed in the
-Dockerfile earlier but **not** in `deployment/railway.toml` and
-`deployment/render.yaml`, which were still starting `app.main:app` — so a
-Railway or Render deploy ran the dead tree. Both now start `backend.main:app`.
-
-`research/` holds the bootcamp deliverables this repository began as — data
-cataloguing, ontology, synthetic data generation, evaluation — with their own
-tests under `tests/`. Nothing in `backend/` imports them; they are reached only
-by `scripts/demo_task*.py` and their tests. They are excluded from the default
-`pytest` run, `pytest tests/` opts into them, and CI runs that too — 130 tests
-that once sat outside every automated check.
-
-They used to live **inside `src/`**, next to the React application, which
-`vite.config.ts` aliases as `@` and `tsconfig.json` includes. Five and a half
-thousand lines of Python sat in the frontend's source root, kept out of the
-bundle only because nothing imported them, and excluded from ruff and mypy so
-that none of it was checked by anything. Moving it to `research/` makes the
-boundary real: `src/` is the frontend, `research/` is Python, and the tree is
-linted in CI alongside `backend/`.
-
-It is not dead code. It has 130 passing tests and it is part of what this
-repository is; the point of moving it was to stop pretending the two halves
-were one codebase.
-
----
+`research/` contains the separate data-catalogue, synthetic-data, ontology,
+orchestration, and evaluation utilities; `pytest tests/ --no-cov` covers them.
+They are not imported by the web application. Retained demo scripts are
+examples/illustrations, not measured production or performance evidence.
+`python scripts/demo_task1_catalog.py` recreates the ignored Task 1 HTML
+outputs under `docs/roadmap/screenshots/`.
 
 ## Dependencies
 
-The rule is narrow: **if nothing in `backend/`, `scripts/` or the test suite
-imports it, it does not belong in `requirements.txt`.** An unused pin is not
-free. It is a supply-chain surface, an install cost, and — the reason this
-became urgent — a constraint on the resolver.
+Keep direct requirements tied to actual runtime, script, test, or tooling
+usage. Install from `requirements.txt` and `package-lock.json`; do not carry
+speculative integrations or upgrade unrelated packages as cleanup.
 
-`requirements.txt` had accumulated twenty-two packages nothing imported: the
-whole LangChain stack (`langchain`, `-openai`, `-community`, `-core`), the
-`openai` SDK, `tiktoken`, `redis`, `scikit-learn`, `selenium`,
-`hypothesis`, `mutmut`, `debugpy`, `Faker`, `typer`, `click`, `orjson`,
-`websockets`, a duplicate `structlog` entry, and `black`/`isort`/`flake8`
-three releases after ruff replaced them.
-
-That was not merely untidy. `langchain` pinned `numpy<2`, and NumPy 1.26 has
-no CPython 3.13 wheels — so a dependency **no line of code imported** was what
-capped the project at Python 3.12 and made `pip install -r requirements.txt`
-fail on a current interpreter. Deleting it was the fix; upgrading it would
-have been solving the wrong problem.
-
-Two further notes on what remains:
-
-- **Alembic is back.** It was in that list of twenty-two, pinned while nothing
-  imported it — correctly removed under the rule above. It returned when
-  `migrations/` was actually written and `backend/core/database.py` started
-  applying revisions. That is the rule working in both directions, not an
-  exception to it: the package is here because code uses it.
-- **Vector store.** Chroma is embedded via `PersistentClient` — in-process, no
-  HTTP listener, no auth provider, no tenants. This is why the four open
-  chromadb advisories, all of which target its *server*, are not reachable
-  here. `requirements.txt` records the reasoning; re-check when a fixed
-  release exists.
-- **JWTs.** PyJWT, not python-jose. The service signs with HS256 and never
-  executes an ECDSA path, but python-jose pulled in `ecdsa`, whose P-256
-  timing advisory has no fixed version and never will. Three lines in
-  `auth_service.py` removed a permanent audit finding.
-
-The same rule applies to the frontend: `framer-motion`, `socket.io-client`,
-`react-hook-form` and `@playwright/test` were declared and never imported, and
-`uuid` existed to generate one request ID that `crypto.randomUUID()` already
-provides natively.
+- Alembic manages schema revisions; asyncpg supplies the PostgreSQL driver.
+- Chroma is embedded through `PersistentClient`, not exposed as a Chroma HTTP
+  server. Known server-advisory tracking remains in
+  [#46](https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system/issues/46).
+- sentence-transformers supplies embeddings and reranking; model failures
+  must remain visible through health and response fields.
+- Ruff owns Python formatting/lint rules. Mypy follows the executing Python
+  version so version-specific dependency stubs match the CI interpreter.
+- Bundle analysis is optional; see
+  [CONTRIBUTING.md](../CONTRIBUTING.md#before-you-open-a-pull-request).
 
 ---
 
@@ -501,25 +434,10 @@ Stated plainly so nobody discovers them the hard way:
 
 ## Testing
 
-`pytest` runs the suite against a real application instance with a throwaway
-SQLite database and vector store — the same wiring production uses, not a
-parallel mock of it.
-
-| File | Guards |
-|---|---|
-| `test_document_workflow.py` | Upload → process → index → retrieve → delete; tenant isolation; pagination |
-| `test_persistence.py` | Documents survive a restart; source retention |
-| `test_auth.py` | Every protected endpoint rejects anonymous and forged tokens |
-| `test_upload_validation.py` | Renamed binaries, oversize, empty, traversal |
-| `test_text_extraction.py` | Failures fail, and never become indexed content |
-| `test_rag_grounding.py` | Page citations, context assembly, lexical fallback quality |
-| `test_document_comparison.py` | Paragraph diffing, page tracking, route ordering, ownership |
-| `test_document_insights.py` | Entities, PII flagging, and that no PII value is ever persisted |
-| `test_document_export.py` | Markdown rendering, and that an export never carries a PII value |
-| `test_api_contract.py` | Health honesty, correlation IDs, headers, metrics, OpenAPI |
-| `test_config.py` | Documented env vars work; production hardening refuses unsafe config |
-| `test_progress_reporting.py` | Websocket progress shape; structured-logger call signatures |
-
-Coverage is measured over code the application actually runs (see
-`.coveragerc`), with a 70% gate. Including the unwired modules would drag the
-number to roughly 47% and hide regressions in the code that does run.
+The [backend suite](../backend/tests/) uses a real application instance with
+disposable SQLite, vector storage, and uploads. Coverage exclusions are
+explicit in [.coveragerc](../.coveragerc), with a 70% gate. The
+[test strategy](testing/TESTING_GUIDELINES.md) describes fixtures, failure and
+ownership assertions, optional-dependency skips, and remaining verification
+gaps. Commands and the platform matrix live in
+[CONTRIBUTING.md](../CONTRIBUTING.md#before-you-open-a-pull-request).

@@ -9,44 +9,33 @@ import {
     IconButton,
     Button,
     Skeleton,
-    LinearProgress,
-    Divider
+    LinearProgress
 } from '@mui/material';
 import { 
     Article, 
     CheckCircle, 
     Refresh,
-    TrendingUp,
     AutoAwesome,
     PieChart,
     Timeline,
-    Speed,
     Storage,
     Memory
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../api/client';
-
-// ==============================================================================
-// Roneira AI - Data Insights Plus Dashboard
-// Advanced Analytics & Visualizations
-// ==============================================================================
-
-// API paths handled by Vite proxy
-// const API_BASE = 'http://localhost:8000';
+import { describeHealth, formatFeedback } from './indicators';
 
 interface MetricCardProps {
     title: string;
     value: string | number;
     subValue?: string;
     icon: React.ReactNode;
-    trend?: { value: string; isPositive: boolean };
     gradient: string;
     glowColor: string;
     loading?: boolean;
 }
 
-const MetricCard = ({ title, value, subValue, icon, trend, gradient, glowColor, loading }: MetricCardProps) => (
+const MetricCard = ({ title, value, subValue, icon, gradient, glowColor, loading }: MetricCardProps) => (
     <Card sx={{ 
         height: '100%',
         cursor: 'pointer',
@@ -68,20 +57,6 @@ const MetricCard = ({ title, value, subValue, icon, trend, gradient, glowColor, 
                 <Box sx={{ p: 1.5, borderRadius: 3, background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)' }}>
                     {icon}
                 </Box>
-                {trend && (
-                    <Chip 
-                        size="small" 
-                        icon={<TrendingUp sx={{ fontSize: 14 }} />} 
-                        label={trend.value} 
-                        sx={{ 
-                            height: 24, 
-                            fontWeight: 600,
-                            background: trend.isPositive ? 'rgba(122, 154, 91, 0.15)' : 'rgba(194, 94, 63, 0.15)', 
-                            color: trend.isPositive ? '#7A9A5B' : '#C25E3F',
-                            border: `1px solid ${trend.isPositive ? 'rgba(122, 154, 91, 0.2)' : 'rgba(194, 94, 63, 0.2)'}`
-                        }} 
-                    />
-                )}
             </Box>
             
             <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 600, mb: 0.5 }}>
@@ -143,7 +118,7 @@ const Dashboard = () => {
     
     // Flat accents rather than two-hue gradients. A gradient from ochre to
     // purple says nothing about the number underneath it, and the palette only
-    // has one accent to spend — on provenance.
+    // has one accent to spend â€” on provenance.
     const gradients = {
         primary: '#D0A215',
         info: '#5E7A8A',
@@ -166,7 +141,7 @@ const Dashboard = () => {
             // and bare fetch sends none, so every request 401'd and the whole
             // dashboard rendered zeros against a full index.
             //
-            // Health is deliberately the one exception — it is unauthenticated
+            // Health is deliberately the one exception â€” it is unauthenticated
             // and must stay readable even when a token has expired, which is
             // exactly when you want to know what is wrong.
             const [docsRes, healthRes, metricsRes] = await Promise.allSettled([
@@ -178,8 +153,8 @@ const Dashboard = () => {
             if (docsRes.status === 'fulfilled') {
                 setDocuments(docsRes.value.data?.documents ?? []);
             }
-            if (healthRes.status === 'fulfilled') setHealth(healthRes.value.data);
-            if (metricsRes.status === 'fulfilled') setMetrics(metricsRes.value.data);
+            setHealth(healthRes.status === 'fulfilled' ? healthRes.value.data : null);
+            setMetrics(metricsRes.status === 'fulfilled' ? metricsRes.value.data : null);
             setLoading(false);
         } catch (error) {
             console.error(error);
@@ -190,8 +165,8 @@ const Dashboard = () => {
     useEffect(() => { fetchData(); const i = setInterval(fetchData, 15000); return () => clearInterval(i); }, []);
 
     // Calculated Metrics
-    const total = metrics?.total_documents || documents.length;
-    const processing = documents.filter(d => d.status === 'processing').length;
+    const total = metrics?.total_documents ?? documents.length;
+    const processing = metrics?.documents_by_status?.processing ?? documents.filter(d => d.status === 'processing').length;
     
     // Document Types
     const getDocType = (name: string) => {
@@ -208,13 +183,9 @@ const Dashboard = () => {
         return acc;
     }, {} as Record<string, number>);
 
-    // Insight Metrics (Derived from actual data)
-    // Guard against metrics being null/undefined
-    const accuracy = (metrics?.accuracy !== undefined && metrics?.accuracy !== null) 
-        ? Number(metrics.accuracy).toFixed(1) 
-        : '100.0';
-    const avgTime = '-'; // Will be populated when we have real processing time metrics
-    const storageUsed = (documents.reduce((acc, d) => acc + (d.file_size || 0), 0) / 1024 / 1024).toFixed(2);
+    const feedbackRating = formatFeedback(metrics);
+    const storageUsed = (documents.reduce((acc, d) => acc + (d.size_bytes ?? 0), 0) / 1024 / 1024).toFixed(2);
+    const healthColor = health?.status === 'healthy' ? '#7A9A5B' : '#C25E3F';
 
     return (
         <Box sx={{ flexGrow: 1, p: { xs: 2, md: 4, lg: 5 }, minHeight: '100vh', background: '#0F100E' }}>
@@ -222,10 +193,10 @@ const Dashboard = () => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 5 }}>
                 <Box>
                     <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.02em', mb: 1, color: 'white' }}>
-                        Data Insights <Box component="span" sx={{ color: '#D0A215' }}>Plus</Box>
+                        Document overview
                     </Typography>
                     <Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                        Real-time intelligence dashboard & system telemetry
+                        Documents, answer feedback, and service availability
                     </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 2 }}>
@@ -247,6 +218,7 @@ const Dashboard = () => {
                     </Button>
                     <IconButton 
                         onClick={fetchData} 
+                        aria-label="Refresh dashboard"
                         sx={{ 
                             background: 'rgba(255,255,255,0.05)', 
                             borderRadius: 3,
@@ -261,9 +233,9 @@ const Dashboard = () => {
 
             {/* Core Metrics Grid */}
             <Grid container spacing={3} sx={{ mb: 4 }}>
-                <Grid item xs={12} sm={6} lg={3}>
+                <Grid item xs={12} sm={6} lg={4}>
                     <MetricCard 
-                        title="Total Indexed" 
+                        title="Documents"
                         value={total} 
                         subValue="documents"
                         icon={<Storage sx={{ color: '#a855f7' }} />} 
@@ -272,29 +244,20 @@ const Dashboard = () => {
                         loading={loading} 
                     />
                 </Grid>
-                <Grid item xs={12} sm={6} lg={3}>
+                <Grid item xs={12} sm={6} lg={4}>
                     <MetricCard 
-                        title="AI Accuracy Score" 
-                        value={`${accuracy}%`} 
-                        icon={<VerifiedUser sx={{ color: '#7A9A5B' }} />} 
+                        title="Positive answer feedback"
+                        value={feedbackRating}
+                        subValue={metrics?.feedback ? `${metrics.feedback.total} ratings` : undefined}
+                        icon={<CheckCircle sx={{ color: '#7A9A5B' }} />}
                         gradient={gradients.success} 
                         glowColor={glows.success} 
                         loading={loading} 
                     />
                 </Grid>
-                <Grid item xs={12} sm={6} lg={3}>
+                <Grid item xs={12} sm={6} lg={4}>
                     <MetricCard 
-                        title="Avg Process Time" 
-                        value={avgTime} 
-                        icon={<Speed sx={{ color: '#D0A215' }} />} 
-                        gradient={gradients.info} 
-                        glowColor={glows.info} 
-                        loading={loading} 
-                    />
-                </Grid>
-                <Grid item xs={12} sm={6} lg={3}>
-                    <MetricCard 
-                        title="Storage Used" 
+                        title="Loaded file size"
                         value={storageUsed} 
                         subValue="MB"
                         icon={<Memory sx={{ color: '#C9922B' }} />} 
@@ -312,20 +275,18 @@ const Dashboard = () => {
                     <Card sx={{ height: '100%', background: 'rgba(10, 11, 9, 0.6)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <CardContent sx={{ p: 4 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 4 }}>
-                                <Typography variant="h6" sx={{ fontWeight: 700, color: 'white' }}>Corpus Distribution</Typography>
+                                <Typography variant="h6" sx={{ fontWeight: 700, color: 'white' }}>Filename groups</Typography>
                                 <PieChart sx={{ color: 'text.secondary' }} />
                             </Box>
                             
-                            <DistributionBar label="Finance & Invoices" value={total > 0 ? ((types['Finance'] || 0) / total) * 100 : 0} count={types['Finance'] || 0} color="#D0A215" />
-                            <DistributionBar label="Human Resources" value={total > 0 ? ((types['HR'] || 0) / total) * 100 : 0} count={types['HR'] || 0} color="#7A9A5B" />
-                            <DistributionBar label="Engineering" value={total > 0 ? ((types['Engineering'] || 0) / total) * 100 : 0} count={types['Engineering'] || 0} color="#C9922B" />
-                            <DistributionBar label="Uncategorized" value={total > 0 ? ((types['General'] || 0) / total) * 100 : 0} count={types['General'] || 0} color="#95907F" />
-                            
-                            <Divider sx={{ my: 3, borderColor: 'rgba(255,255,255,0.1)' }} />
+                            <DistributionBar label="Finance & Invoices" value={documents.length > 0 ? ((types['Finance'] || 0) / documents.length) * 100 : 0} count={types['Finance'] || 0} color="#D0A215" />
+                            <DistributionBar label="Human Resources" value={documents.length > 0 ? ((types['HR'] || 0) / documents.length) * 100 : 0} count={types['HR'] || 0} color="#7A9A5B" />
+                            <DistributionBar label="Engineering" value={documents.length > 0 ? ((types['Engineering'] || 0) / documents.length) * 100 : 0} count={types['Engineering'] || 0} color="#C9922B" />
+                            <DistributionBar label="Uncategorized" value={documents.length > 0 ? ((types['General'] || 0) / documents.length) * 100 : 0} count={types['General'] || 0} color="#95907F" />
                             
                             <Box sx={{ textAlign: 'center' }}>
                                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                    Knowledge Base Last Updated: Just now
+                                    Grouped from the loaded document filenames
                                 </Typography>
                             </Box>
                         </CardContent>
@@ -337,35 +298,34 @@ const Dashboard = () => {
                     <Grid container spacing={3}>
                         {/* System Status */}
                         <Grid item xs={12}>
-                            <Card sx={{ background: 'linear-gradient(135deg, rgba(122, 154, 91, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%)', border: '1px solid rgba(122, 154, 91, 0.2)' }}>
+                            <Card sx={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${healthColor}` }}>
                                 <CardContent sx={{ p: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                         <Box sx={{ position: 'relative' }}>
-                                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', background: '#7A9A5B', boxShadow: '0 0 10px #7A9A5B' }} />
-                                            <Box sx={{ position: 'absolute', top: -4, left: -4, right: -4, bottom: -4, borderRadius: '50%', border: '2px solid rgba(122, 154, 91, 0.3)', animation: 'pulse 2s infinite' }} />
+                                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', background: healthColor }} />
                                         </Box>
                                         <Box>
-                                            <Typography variant="h6" sx={{ fontWeight: 700, color: 'white' }}>All Systems Operational</Typography>
+                                            <Typography variant="h6" sx={{ fontWeight: 700, color: 'white' }}>{describeHealth(health?.status)}</Typography>
                                             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                                LLM Inference (Ollama) • Tensor OCR • Redis Pipeline
+                                                Document and model service availability
                                             </Typography>
                                         </Box>
                                     </Box>
                                     <Box sx={{ display: 'flex', gap: 3 }}>
                                         <Box sx={{ textAlign: 'right' }}>
                                             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Database</Typography>
-                                            <Typography variant="body1" sx={{ fontWeight: 600, color: health?.database_status === 'connected' ? '#7A9A5B' : '#C25E3F' }}>
-                                                {health?.database_status || '-'}
+                                            <Typography variant="body1" sx={{ fontWeight: 600, color: health?.components?.database?.status === 'ok' ? '#7A9A5B' : '#C25E3F' }}>
+                                                {health?.components?.database?.status ?? 'unknown'}
                                             </Typography>
                                         </Box>
                                         <Box sx={{ textAlign: 'right' }}>
-                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Processing Queue</Typography>
-                                            <Typography variant="body1" sx={{ fontWeight: 600, color: '#D0A215' }}>{processing} jobs</Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Processing</Typography>
+                                            <Typography variant="body1" sx={{ fontWeight: 600, color: '#D0A215' }}>{processing} documents</Typography>
                                         </Box>
                                         <Box sx={{ textAlign: 'right' }}>
                                             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>Services</Typography>
-                                            <Typography variant="body1" sx={{ fontWeight: 600, color: health?.services_status === 'operational' ? '#a855f7' : '#C9922B' }}>
-                                                {health?.services_status || '-'}
+                                            <Typography variant="body1" sx={{ fontWeight: 600, color: healthColor }}>
+                                                {health?.status ?? 'unknown'}
                                             </Typography>
                                         </Box>
                                     </Box>
@@ -378,12 +338,12 @@ const Dashboard = () => {
                             <Card sx={{ background: 'rgba(10, 11, 9, 0.6)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.05)' }}>
                                 <CardContent sx={{ p: 4 }}>
                                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                                        <Typography variant="h6" sx={{ fontWeight: 700, color: 'white' }}>Live Processing Feed</Typography>
+                                        <Typography variant="h6" sx={{ fontWeight: 700, color: 'white' }}>Recent documents</Typography>
                                         <Timeline sx={{ color: 'text.secondary' }} />
                                     </Box>
                                     
                                     {documents.slice(0, 4).map((doc, idx) => (
-                                        <Box key={doc.id} sx={{ mb: 2, pb: 2, borderBottom: idx < 3 ? '1px solid rgba(255,255,255,0.05)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <Box key={doc.document_id} sx={{ mb: 2, pb: 2, borderBottom: idx < 3 ? '1px solid rgba(255,255,255,0.05)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                                                 <Box sx={{ 
                                                     width: 40, height: 40, borderRadius: 2, 
@@ -395,17 +355,17 @@ const Dashboard = () => {
                                                 <Box>
                                                     <Typography variant="body2" sx={{ fontWeight: 600, color: 'white' }}>{doc.filename}</Typography>
                                                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                                                        Processed by llama3.2:3b • {doc.file_size} bytes
+                                                        {doc.size_bytes} bytes
                                                     </Typography>
                                                 </Box>
                                             </Box>
                                             <Chip 
-                                                label={doc.is_processed ? 'ANALYZED' : 'PROCESSING'} 
+                                                label={String(doc.status ?? 'unknown').toUpperCase()}
                                                 size="small" 
                                                 sx={{ 
                                                     fontWeight: 700, fontSize: '0.7rem',
-                                                    background: doc.is_processed ? 'rgba(122, 154, 91, 0.1)' : 'rgba(201, 146, 43, 0.1)',
-                                                    color: doc.is_processed ? '#7A9A5B' : '#C9922B'
+                                                    background: doc.status === 'completed' ? 'rgba(122, 154, 91, 0.1)' : 'rgba(201, 146, 43, 0.1)',
+                                                    color: doc.status === 'completed' ? '#7A9A5B' : '#C9922B'
                                                 }} 
                                             />
                                         </Box>
@@ -419,8 +379,5 @@ const Dashboard = () => {
         </Box>
     );
 };
-
-// Simple icon placeholder since we don't have VerifiedUser imported
-const VerifiedUser = (props: any) => <CheckCircle {...props} />;
 
 export default Dashboard;

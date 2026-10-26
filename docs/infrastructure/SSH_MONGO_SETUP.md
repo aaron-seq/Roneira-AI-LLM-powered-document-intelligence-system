@@ -1,5 +1,9 @@
 # SSH Port Forwarding & MongoDB Setup Guide
 
+General infrastructure tutorial; MongoDB is not a Roneira prerequisite.
+Roneira's supported SQL database configuration is described in
+[DEPLOYMENT.md](../DEPLOYMENT.md#scaling).
+
 **Goal**: Connect to a remote MongoDB instance securely via SSH tunneling, allowing you to use local tools (Compass, mongosh) as if the DB were on `localhost`.
 
 ## 1. Generate SSH Key (Local Machine)

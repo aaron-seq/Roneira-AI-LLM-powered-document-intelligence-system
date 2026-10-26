@@ -1,180 +1,109 @@
 # Contributing
 
-Thanks for considering it. This guide is short on purpose — the goal is to
-make it easy to land a good change, not to enumerate rules.
-
----
-
 ## Setup
 
-```bash
-git clone https://github.com/aaron-seq/Roneira-AI-LLM-powered-document-intelligence-system.git
-cd Roneira-AI-LLM-powered-document-intelligence-system
-
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install ruff mypy                 # dev tooling
-
-cp .env.example .env
-pytest                                # should pass before you change anything
-uvicorn backend.main:app --reload
-```
-
-Frontend:
-
-```bash
-npm install
-npm run dev
-```
-
-If `pytest` does not pass on a clean checkout, that is a bug — please open an
-issue rather than working around it.
-
----
+Use the [README quick start](README.md#quick-start), including the pinned
+backend requirements and `npm ci`. Keep local credentials, databases, uploads,
+virtual environments, and build output outside version control.
 
 ## Before you open a pull request
 
 ```bash
-pytest                                                  # tests + 70% coverage gate
-pytest tests/ --no-cov                                  # the research/ modules
+pytest
+pytest tests/ --no-cov
 ruff check backend/ research/ migrations/
-ruff format backend/ research/ migrations/
-mypy backend/core backend/api backend/repositories --ignore-missing-imports
-
-# If you touched backend/core/models.py, this must pass:
-alembic upgrade head && alembic check
-
-npm run type-check && npm run lint && npm run build
+ruff format --check backend/ research/ migrations/
+mypy backend/core backend/api backend/repositories --ignore-missing-imports --no-strict-optional --follow-imports=silent
+alembic upgrade head
+alembic check
+npm test && npm run type-check && npm run lint && npm run build
 ```
 
-CI runs all of this plus a smoke job that boots the app and drives a document
-from upload through to a successful search.
+Run migration commands against a disposable `DATABASE_URL`, never a shared
+database. CI uses Python 3.11/3.12/3.13 for lint/types, exercises backend and
+research tests, checks migration drift, drives an authenticated upload/search,
+and builds/probes the backend image. The backend coverage gate is 70%.
 
----
+For an optional local bundle report at `dist/stats.html`:
+
+```bash
+ANALYZE_BUNDLE=true npm run build
+```
+
+PowerShell: `$env:ANALYZE_BUNDLE='true'; npm run build`; clear the variable
+before a normal release build. Normal builds omit this diagnostic report.
 
 ## What a good change looks like
 
-**Every behaviour change comes with a test.** Not for a coverage number — for
-the next person, who needs to know whether they just broke something. The most
-valuable tests in this repository are the ones that encode a bug we already
-shipped:
-
-- `TestRetrievalSeesUploadedDocuments` — uploads were invisible to search
-- `TestOwnershipIsolation` — every user could read every document
-- `TestDocumentsSurviveRestart` — all state lived in a dict
-- `test_failure_messages_never_masquerade_as_content` — extraction errors were
-  indexed as document text
-
-Write the test that would have caught your bug, then fix it.
-
-**Say why in comments, not what.** The code says what it does. A comment
-earns its place by explaining a constraint or a decision that is not obvious:
-
-```python
-# X-Forwarded-For is deliberately NOT trusted: unless the proxy is known to
-# overwrite it, any client can set it and reset its own budget.
-```
-
-**Fail loudly, degrade visibly.** This system runs against optional
-dependencies (an embedding model, an LLM) that may be absent. When a
-capability is missing, the rule is: keep serving what still works, and make
-the reduced capability visible in `/api/health`, in the API response, and in a
-metric. Never return a confident-looking answer produced by a fallback the
-caller cannot detect. That principle is why `embeddings_are_real` and
-`grounded` appear on responses.
-
-**Update the docs when behaviour changes.** Especially `.env.example` (which is
-also the configuration reference) and `docs/ARCHITECTURE.md#known-limitations`.
-
----
+- Test observable behavior and failure paths. Reproduce a defect before
+  fixing it; preserve denied access, durable state, and side-effect assertions.
+- Use synthetic data and isolated fixtures. Do not run tests against live
+  user data. [Testing guidance](docs/testing/TESTING_GUIDELINES.md) describes
+  the fixture boundaries and coverage gaps.
+- Declare degraded capabilities in health and response fields; do not turn
+  model failures into confident-looking content.
+- Explain why a constraint exists. Avoid comments that repeat the code.
+- Update affected configuration and documentation. Keep permanent guidance
+  separate from PR-specific evidence and completion reports.
 
 ## Project conventions
 
-**Layering.** Dependencies point inward and nothing points back out:
+Dependencies point inward: `routers → services → repositories → ORM`.
+Routers parse/authenticate/delegate; repositories enforce ownership filtering.
+Services are wired in `backend/api/dependencies.py`. Processing and chat must
+share the same retrieval service so uploaded documents are searchable.
 
-```
-routers  →  services  →  repositories  →  ORM
-```
+Settings belong in `backend/core/config.py` and [.env.example](.env.example).
+With pydantic-settings v2, use `validation_alias` when the environment name
+differs from the field name; `Field(env=...)` does not configure that mapping.
 
-- Routers do HTTP: parse, authorize, delegate, shape the response.
-- Services hold business logic and know nothing about HTTP.
-- Repositories are the only code that touches the ORM. **Ownership filtering
-  lives here**, so a new endpoint cannot leak another tenant's data by
-  forgetting a check.
-
-**Wiring** happens in `backend/api/dependencies.py`. Services are constructed
-once at startup and injected. Do not construct a service inside another
-service — that is exactly how the upload pipeline and chat ended up with
-separate vector stores and no working retrieval.
-
-**Configuration** goes in `backend/core/config.py` and nowhere else. Add the
-field, document it in `.env.example`, and note that pydantic-settings v2
-ignores `Field(env=...)` — use `validation_alias` when the environment name
-differs from the field name.
-
-**Schema changes** need a migration. Change `backend/core/models.py`, then:
+Schema changes need reviewed Alembic migrations:
 
 ```bash
-alembic revision --autogenerate -m "what changed"
+alembic revision --autogenerate -m "describe the schema change"
 ```
 
-Read what it generated before committing it — autogenerate is a first draft.
-It does not detect renames (it writes a drop plus an add, which loses the
-data) and it cannot know what a backfill should contain. `migrations/README.md`
-has the detail. CI runs `alembic check`, so a model change without its
-migration fails the build rather than reaching a database that already exists.
+Autogenerate cannot safely infer renames or data backfills. Read
+[migrations/README.md](migrations/README.md) before applying generated code.
 
-**Repository layout.** `src/` is the React frontend. `research/` is the Python
-research tree (data cataloguing, ontology, synthetic data, evaluation) with
-tests in `tests/`. `backend/` is the service. The research code used to live
-inside `src/`, which is how 5,500 lines of Python ended up in the frontend's
-source root, excluded from every linter; please keep the boundary.
-
-**Style** is whatever `ruff format` produces. Line length 90. Type hints on
-public functions. Google-style docstrings on anything non-obvious.
-
----
+`src/` is the React application; `backend/` is the API; `research/` contains
+separately tested Python utilities. Ruff defines Python style (line length 90).
+Use existing ESLint/TypeScript settings for frontend changes.
 
 ## Working on the unwired modules
 
-`backend/` contains modules that are present but not imported by the running
-application — OCR, PII detection, entity extraction, the multi-provider LLM
-abstraction, and others. They are listed in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#unwired-modules).
+Offline training utilities and optional tracing remain outside the running
+application's coverage scope. If wiring them into a request path, add behavior
+tests and remove the relevant coverage omission in the same change. Entity
+extraction, PII flags, summaries, and OCR are already active; see
+[architecture](docs/ARCHITECTURE.md#unwired-modules).
 
-Wiring one up is among the highest-value contributions available, and OCR is
-the biggest gap between what the project promises and what it does. If you
-take one on:
+## Troubleshooting
 
-1. Remove its entry from `.coveragerc` and from the per-file ignores in
-   `pyproject.toml`.
-2. Bring tests with it — it will now be inside the coverage gate.
-3. Add the failure mode to the table in `docs/ARCHITECTURE.md`, including how
-   an operator finds out when it degrades.
-
----
+| Symptom | Check/action |
+|---|---|
+| Imports fail or Ruff rejects a configured rule | Activate the environment and reinstall `requirements.txt`; `pytest.ini` supplies the repository import path. |
+| Python install fails with Windows `WinError 206` | Use a shorter virtual-environment path; PyTorch contains deeply nested paths. |
+| Chat cannot generate prose | Check `/api/health`, `OLLAMA_BASE_URL`, `ollama serve`, and `ollama list`. |
+| `embeddings_are_real` is false | Inspect the embedding component's health reason; weights/imports may be unavailable even when the package is installed. |
+| A scan is rejected or garbled | Verify Tesseract and `TESSERACT_PATH`; inspect `ocr_pages`. There is no handwriting/deskew/denoise pass. |
+| Production startup rejects secrets, CORS, hosts, or debug | Fix the named setting; keep production validation enabled. |
+| Windows test cleanup reports a locked Chroma SQLite file | Chroma may retain a handle; the disposable fixture tolerates that cleanup limitation. |
+| An older environment raises `np.float_` errors | Reinstall the current requirements, which pair Chroma 1.x with NumPy 2. |
+| SQLite/Gunicorn startup fails with multiple workers | Keep `WORKERS=1`; PostgreSQL and shared storage changes are required before scaling. |
+| Python crashes under Git Bash (`TP_NUM_C_BUFS`) | Use PowerShell or cmd for Python/pytest/uvicorn. |
+| `localhost:3000` shows another app | Check port ownership or use `http://127.0.0.1:3000`. |
 
 ## Reporting things
 
-**Bugs** — include what you did, what you expected, what happened, and the
-`X-Correlation-ID` from the response header if there was one. It appears in
-the server logs and turns a vague report into a specific one.
-
-**Security issues** — do not open a public issue. See
-[docs/SECURITY.md](docs/SECURITY.md#reporting-a-vulnerability).
-
-**Features** — describe the workflow you are trying to complete rather than
-the implementation you have in mind. The roadmap in the README is a good place
-to check whether it is already planned.
-
----
+For bugs, include steps, expected/actual behavior, revision, safe logs, and the
+`X-Correlation-ID` if available. For security concerns, follow
+[SECURITY.md](docs/SECURITY.md#reporting-a-vulnerability); do not publish
+vulnerability details in public issues.
 
 ## Reviews
 
-Expect questions about behaviour under failure: what happens when the model is
-missing, the disk is full, the document is a scan, or two users hit the same
-endpoint. Those questions are not obstruction — most of this project's history
-of bugs lives in exactly those paths.
-
-Small, focused pull requests get reviewed faster than large ones. If a change
-needs a refactor first, that refactor is welcome as its own pull request.
+Keep changes cohesive. Report exact commands/revisions, distinguish local
+checks from published CI, and disclose skipped or blocked checks. Review
+questions should focus on behavior, failure handling, security boundaries,
+compatibility, and maintenance cost.

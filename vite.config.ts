@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tsconfigPaths(),
-      isProduction && visualizer({
+      isProduction && process.env.ANALYZE_BUNDLE === 'true' && visualizer({
         filename: 'dist/stats.html',
         open: false,
         gzipSize: true,
@@ -30,9 +30,8 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: process.env.VITE_API_BASE_URL || 'http://localhost:8000',
           changeOrigin: true,
-          // rewrite: (path) => path.replace(/^\/api/, ''), // Removed to preserve /api prefix
         },
-        '/ws': { // Added missing key for websocket proxy
+        '/ws': {
           target: process.env.VITE_WS_BASE_URL || 'ws://localhost:8000',
           ws: true,
         },
@@ -46,8 +45,7 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             react: ['react', 'react-dom', 'react-router-dom'],
             mui: ['@mui/material', '@emotion/react', '@emotion/styled'],
-            tanstack: ['@tanstack/react-query'],
-            vendor: ['axios', 'date-fns'],
+            vendor: ['axios'],
           },
         },
       },
