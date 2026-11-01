@@ -22,7 +22,9 @@ import asyncio
 import os
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
 
 from backend.common.helpers import extract_text_from_file
 from backend.core.config import get_settings
@@ -40,6 +42,12 @@ from backend.services.retrieval_service import RetrievalService
 logger = get_logger(__name__)
 
 
+@dataclass
+class _DocumentLockEntry:
+    lock: asyncio.Lock
+    users: int = 0
+
+
 class DocumentProcessorService:
     """Owns the document lifecycle from upload to indexed and queryable."""
 
@@ -54,6 +62,30 @@ class DocumentProcessorService:
         # Shared with ChatService: one index, one embedding model, one cache.
         self.retrieval_service = retrieval_service
         self.llm_service = llm_service or LocalLLMService()
+        self._document_locks: Dict[str, _DocumentLockEntry] = {}
+
+    @asynccontextmanager
+    async def _document_operation(self, document_id: str) -> AsyncIterator[None]:
+        entry = self._document_locks.get(document_id)
+        if entry is None:
+            entry = _DocumentLockEntry(lock=asyncio.Lock())
+            self._document_locks[document_id] = entry
+        entry.users += 1
+
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.users -= 1
+            if entry.users == 0 and self._document_locks.get(document_id) is entry:
+                del self._document_locks[document_id]
+
+    async def _discard_unpersisted_vectors(self, document_id: str) -> None:
+        if not await self.retrieval_service.delete_document(document_id):
+            logger.error(
+                "Could not remove vectors after document persistence failed",
+                document_id=document_id,
+            )
 
     # ------------------------------------------------------------- lifecycle
     @with_correlation_id
@@ -199,37 +231,51 @@ class DocumentProcessorService:
                 progress_callback,
             )
 
-            indexing = await self.retrieval_service.index_document(
-                document_id=document_id,
-                content=extracted_text,
-                metadata={
-                    "filename": filename,
-                    "document_id": document_id,
-                    **{
-                        # ChromaDB metadata values must be scalars.
-                        k: v
-                        for k, v in doc_metadata.items()
-                        if isinstance(v, (str, int, float, bool))
+            async with self._document_operation(document_id):
+                document = await self.repository.get(document_id, owner_id=owner_id)
+                if document is None:
+                    logger.info(
+                        "Skipping indexing for a deleted document",
+                        document_id=document_id,
+                    )
+                    return
+
+                indexing = await self.retrieval_service.index_document(
+                    document_id=document_id,
+                    content=extracted_text,
+                    metadata={
+                        "filename": filename,
+                        "document_id": document_id,
+                        **{
+                            # ChromaDB metadata values must be scalars.
+                            k: v
+                            for k, v in doc_metadata.items()
+                            if isinstance(v, (str, int, float, bool))
+                        },
                     },
-                },
-                owner_id=owner_id,
-            )
+                    owner_id=owner_id,
+                )
 
-            if not indexing.success:
-                raise RuntimeError(f"Indexing failed: {indexing.error}")
+                if not indexing.success:
+                    await self._discard_unpersisted_vectors(document_id)
+                    raise RuntimeError(f"Indexing failed: {indexing.error}")
 
-            await self.repository.replace_chunks(
-                document_id, owner_id, indexing.chunk_records
-            )
+                try:
+                    await self.repository.replace_chunks(
+                        document_id, owner_id, indexing.chunk_records
+                    )
+                except Exception:
+                    await self._discard_unpersisted_vectors(document_id)
+                    raise
 
-            await self.repository.mark_completed(
-                document_id,
-                extracted_text=extracted_text,
-                doc_metadata=doc_metadata,
-                ai_analysis=ai_analysis,
-                chunk_count=indexing.chunks_indexed,
-                embeddings_are_real=indexing.embeddings_are_real,
-            )
+                await self.repository.mark_completed(
+                    document_id,
+                    extracted_text=extracted_text,
+                    doc_metadata=doc_metadata,
+                    ai_analysis=ai_analysis,
+                    chunk_count=indexing.chunks_indexed,
+                    embeddings_are_real=indexing.embeddings_are_real,
+                )
 
             await self._maybe_delete_source(document_id, file_path)
             await self._notify(document_id, progress_callback)
@@ -440,23 +486,24 @@ class DocumentProcessorService:
 
     async def delete_document(self, document_id: str, owner_id: str) -> bool:
         """Delete a document, its chunks, its vectors and its source file."""
-        document = await self.repository.get(document_id, owner_id=owner_id)
-        if document is None:
-            return False
+        async with self._document_operation(document_id):
+            document = await self.repository.get(document_id, owner_id=owner_id)
+            if document is None:
+                return False
 
-        storage_path = document.storage_path
-        await self.retrieval_service.delete_document(document_id)
-        deleted = await self.repository.delete(document_id, owner_id=owner_id)
+            storage_path = document.storage_path
+            await self.retrieval_service.delete_document(document_id)
+            deleted = await self.repository.delete(document_id, owner_id=owner_id)
 
-        if deleted and storage_path:
-            try:
-                os.remove(storage_path)
-            except FileNotFoundError:
-                pass
-            except OSError as exc:
-                logger.warning(f"Could not delete source file {storage_path}: {exc}")
+            if deleted and storage_path:
+                try:
+                    os.remove(storage_path)
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    logger.warning(f"Could not delete source file {storage_path}: {exc}")
 
-        return deleted
+            return deleted
 
     async def stats(self, owner_id: Optional[str] = None) -> Dict[str, Any]:
         """Aggregate document counts for dashboards."""
