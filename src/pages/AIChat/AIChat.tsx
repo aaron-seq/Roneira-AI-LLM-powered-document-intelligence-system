@@ -36,6 +36,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiClient } from '../../api/client';
+import { messagesThroughAssistant } from './conversation';
 
 // ==============================================================================
 // Roneira AI - AI Chat Interface
@@ -146,12 +147,17 @@ const AIChat = () => {
     };
 
     // Query LLM with document context
-    const queryLLM = async (query: string, isDetailed: boolean) => {
+    const queryLLM = async (
+        query: string,
+        isDetailed: boolean,
+        turnId?: string,
+    ) => {
         try {
             // Correct endpoint for chat completion
             const response = await apiClient.post('/chat', {
                 message: query,
                 session_id: sessionId,
+                turn_id: turnId,
                 use_rag: true,
                 rag_top_k: 3,
                 document_id: null,
@@ -174,14 +180,14 @@ const AIChat = () => {
         if (!inputValue.trim() || isLoading) return;
         
         const userMessage: ChatMessage = {
-            id: Date.now().toString(),
+            id: crypto.randomUUID(),
             role: 'user',
             content: inputValue,
             timestamp: new Date()
         };
         
         const assistantMessage: ChatMessage = {
-            id: (Date.now() + 1).toString(),
+            id: crypto.randomUUID(),
             role: 'assistant',
             content: '',
             timestamp: new Date(),
@@ -194,7 +200,7 @@ const AIChat = () => {
         setIsLoading(true);
         
         try {
-            const data = await queryLLM(inputValue, detailedMode);
+            const data = await queryLLM(inputValue, detailedMode, userMessage.id);
             
             if (data) {
                 setMessages(prev => prev.map(msg => 
@@ -243,12 +249,14 @@ const AIChat = () => {
 
     // Regenerate response for a specific message
     const regenerateResponse = async (messageId: string) => {
-        // Find the user message that preceded this assistant message
-        const messageIndex = messages.findIndex(m => m.id === messageId);
-        if (messageIndex <= 0) return;
-        
-        const userMessage = messages[messageIndex - 1];
-        if (userMessage.role !== 'user') return;
+        if (isLoading) return;
+
+        const conversation = messagesThroughAssistant(messages, messageId);
+        if (!conversation) return;
+
+        const messageIndex = conversation.length - 1;
+        const originalAssistant = conversation[messageIndex];
+        const userMessage = conversation[messageIndex - 1];
 
         // Mark the assistant message as loading
         setMessages(prev => prev.map(msg => 
@@ -256,35 +264,38 @@ const AIChat = () => {
         ));
         setIsLoading(true);
 
+        const restoreOriginalAnswer = () => {
+            setMessages(prev => prev.map(msg =>
+                msg.id === messageId ? originalAssistant : msg
+            ));
+        };
+
         try {
-            const data = await queryLLM(userMessage.content, detailedMode);
+            const data = await queryLLM(
+                userMessage.content,
+                detailedMode,
+                userMessage.id,
+            );
             if (data) {
-                setMessages(prev => prev.map(msg => 
-                    msg.id === messageId 
-                        ? {
-                            ...msg,
-                            content: data.message,
-                            isLoading: false,
-                            references: data.sources,
-                            grounded: data.grounded,
-                            embeddingsAreReal: data.embeddings_are_real,
-                        }
-                        : msg
-                ));
+                setMessages([
+                    ...conversation.slice(0, -1),
+                    {
+                        ...originalAssistant,
+                        content: data.message,
+                        isLoading: false,
+                        references: data.sources,
+                        grounded: data.grounded,
+                        embeddingsAreReal: data.embeddings_are_real,
+                    },
+                ]);
             } else {
-                setMessages(prev => prev.map(msg => 
-                    msg.id === messageId 
-                        ? { ...msg, content: 'Failed to regenerate response.', isLoading: false }
-                        : msg
-                ));
+                restoreOriginalAnswer();
+                toast.error('Could not regenerate the response. The conversation was preserved.');
             }
         } catch (error) {
             console.error('Regenerating the answer failed:', error);
-            setMessages(prev => prev.map(msg =>
-                msg.id === messageId
-                    ? { ...msg, content: 'An error occurred while regenerating.', isLoading: false }
-                    : msg
-            ));
+            restoreOriginalAnswer();
+            toast.error('Could not regenerate the response. The conversation was preserved.');
         } finally {
             setIsLoading(false);
         }

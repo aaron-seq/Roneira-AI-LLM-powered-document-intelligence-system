@@ -50,6 +50,7 @@ class ChatRequest:
     rag_top_k: int = 5
     document_filter: Optional[str] = None
     stream: bool = False
+    turn_id: Optional[str] = None
 
 
 class ChatService:
@@ -98,6 +99,7 @@ class ChatService:
         document_filter: Optional[str] = None,
         owner_id: Optional[str] = None,
         allowed_document_ids: Optional[List[str]] = None,
+        turn_id: Optional[str] = None,
     ) -> ChatResponse:
         """
         Process a chat message with optional RAG.
@@ -119,7 +121,38 @@ class ChatService:
 
         session_id = session_id or str(uuid.uuid4())
 
-        await self.memory.add_user_message(session_id, message)
+        async with self.memory.session_transaction(session_id) as session:
+            replacing_existing_turn = turn_id is not None and any(
+                item.role == "user" and item.metadata.get("turn_id") == turn_id
+                for item in session.messages
+            )
+            return await self._chat_in_session(
+                message=message,
+                session_id=session_id,
+                turn_id=turn_id,
+                replacing_existing_turn=replacing_existing_turn,
+                use_rag=use_rag,
+                rag_top_k=rag_top_k,
+                document_filter=document_filter,
+                owner_id=owner_id,
+                allowed_document_ids=allowed_document_ids,
+            )
+
+    async def _chat_in_session(
+        self,
+        message: str,
+        session_id: str,
+        turn_id: Optional[str],
+        replacing_existing_turn: bool,
+        use_rag: bool,
+        rag_top_k: int,
+        document_filter: Optional[str],
+        owner_id: Optional[str],
+        allowed_document_ids: Optional[List[str]],
+    ) -> ChatResponse:
+        """Generate and persist one turn while the session transaction is held."""
+
+        await self.memory.add_user_message(session_id, message, turn_id=turn_id)
         history = await self.memory.get_context_messages(session_id)
 
         context = ""
@@ -170,6 +203,8 @@ class ChatService:
         try:
             response_text = await self._generate_response(chat_messages)
         except LLMUnavailableError as exc:
+            if replacing_existing_turn:
+                raise
             llm_failed = True
             response_text = exc.message
 
@@ -197,7 +232,9 @@ class ChatService:
                 "read them directly to verify."
             )
 
-        await self.memory.add_assistant_message(session_id, response_text)
+        await self.memory.add_assistant_message(
+            session_id, response_text, turn_id=turn_id
+        )
 
         return ChatResponse(
             message=response_text,

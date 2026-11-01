@@ -31,6 +31,7 @@ from backend.models.chat_models import (
 from backend.repositories.document_repository import DocumentRepository
 from backend.services.chat_service import ChatService
 from backend.services.guardrail_service import GuardrailService
+from backend.utils.exceptions import LLMUnavailableError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -71,12 +72,18 @@ async def chat_completion(
         response = await chat_service.chat(
             message=message,
             session_id=request.session_id,
+            turn_id=request.turn_id,
             use_rag=request.use_rag,
             rag_top_k=request.rag_top_k,
             document_filter=request.document_id,
             owner_id=user.user_id,
             allowed_document_ids=allowed_ids,
         )
+    except LLMUnavailableError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=exc.message,
+        ) from exc
     except Exception as exc:
         logger.exception("Chat request failed for user %s", user.user_id)
         raise HTTPException(

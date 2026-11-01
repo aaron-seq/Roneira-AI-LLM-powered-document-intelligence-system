@@ -7,6 +7,8 @@ assembly, and the honesty signals attached to every response.
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -222,6 +224,234 @@ class TestHybridRanking:
 class TestChatGrounding:
     """Answers must declare whether they rest on retrieved sources."""
 
+    def test_chat_route_forwards_turn_id(self, app, client, admin_headers):
+        from backend.api.dependencies import get_chat_service
+
+        captured = {}
+
+        class FakeChatService:
+            async def chat(self, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(
+                    message="answer",
+                    session_id=kwargs["session_id"],
+                    sources=[],
+                    model="fake",
+                    usage={},
+                )
+
+        previous = app.dependency_overrides.get(get_chat_service)
+        app.dependency_overrides[get_chat_service] = lambda: FakeChatService()
+        try:
+            response = client.post(
+                "/api/chat",
+                headers=admin_headers,
+                json={
+                    "message": "Q1",
+                    "session_id": "session-api",
+                    "turn_id": "turn-api",
+                    "use_rag": False,
+                },
+            )
+        finally:
+            if previous is None:
+                app.dependency_overrides.pop(get_chat_service, None)
+            else:
+                app.dependency_overrides[get_chat_service] = previous
+
+        assert response.status_code == 200
+        assert captured["turn_id"] == "turn-api"
+
+    def test_chat_route_preserves_service_unavailable_status(
+        self, app, client, admin_headers
+    ):
+        from backend.api.dependencies import get_chat_service
+        from backend.utils.exceptions import LLMUnavailableError
+
+        class UnavailableChatService:
+            async def chat(self, **_):
+                raise LLMUnavailableError("The language model is unavailable.")
+
+        previous = app.dependency_overrides.get(get_chat_service)
+        app.dependency_overrides[get_chat_service] = lambda: UnavailableChatService()
+        try:
+            response = client.post(
+                "/api/chat",
+                headers=admin_headers,
+                json={
+                    "message": "Q1",
+                    "session_id": "session-api",
+                    "turn_id": "turn-api",
+                    "use_rag": False,
+                },
+            )
+        finally:
+            if previous is None:
+                app.dependency_overrides.pop(get_chat_service, None)
+            else:
+                app.dependency_overrides[get_chat_service] = previous
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "The language model is unavailable."
+
+    @staticmethod
+    def _service_with_answers(answers):
+        from backend.services.chat_service import ChatService
+        from backend.services.memory_service import MemoryService
+        from backend.services.prompt_service import PromptService
+
+        class Retrieval:
+            embeddings_are_real = True
+
+        class FakeLLM:
+            settings = SimpleNamespace(ollama_model="fake")
+
+            def __init__(self):
+                self.answers = iter(answers)
+                self.prompts = []
+
+            async def generate_chat_response(self, prompt):
+                self.prompts.append(prompt)
+                answer = next(self.answers)
+                if isinstance(answer, BaseException):
+                    raise answer
+                return answer
+
+        memory = MemoryService()
+        llm = FakeLLM()
+        service = ChatService(
+            retrieval_service=Retrieval(),
+            memory_service=memory,
+            prompt_service=PromptService(),
+            llm_service=llm,
+        )
+        service.is_initialized = True
+        return service, memory, llm
+
+    @pytest.mark.asyncio
+    async def test_regenerating_an_earlier_turn_branches_memory_and_context(self):
+        service, memory, llm = self._service_with_answers(
+            ["A1 old", "A2", "A1 replacement", "A3"]
+        )
+
+        await service.chat("Q1", "session1", use_rag=False, turn_id="turn-1")
+        await service.chat("Q2", "session1", use_rag=False, turn_id="turn-2")
+        await service.chat("Q1", "session1", use_rag=False, turn_id="turn-1")
+
+        regeneration_prompt = llm.prompts[2]
+        assert "A1 old" not in regeneration_prompt
+        assert "Q2" not in regeneration_prompt
+        assert "A2" not in regeneration_prompt
+        history = await memory.get_conversation_history("session1")
+        assert [(item["role"], item["content"]) for item in history] == [
+            ("user", "Q1"),
+            ("assistant", "A1 replacement"),
+        ]
+
+        await service.chat("Q3", "session1", use_rag=False, turn_id="turn-3")
+        next_prompt = llm.prompts[3]
+        assert "A1 replacement" in next_prompt
+        assert "A1 old" not in next_prompt
+        assert "Q2" not in next_prompt
+        assert "A2" not in next_prompt
+
+    @pytest.mark.asyncio
+    async def test_regenerating_the_last_turn_preserves_earlier_context(self):
+        service, memory, llm = self._service_with_answers(["A1", "A2 old", "A2 new"])
+
+        await service.chat("Q1", "session1", use_rag=False, turn_id="turn-1")
+        await service.chat("Q2", "session1", use_rag=False, turn_id="turn-2")
+        await service.chat("Q2", "session1", use_rag=False, turn_id="turn-2")
+
+        regeneration_prompt = llm.prompts[2]
+        assert "A1" in regeneration_prompt
+        assert "A2 old" not in regeneration_prompt
+        history = await memory.get_conversation_history("session1")
+        assert [(item["role"], item["content"]) for item in history] == [
+            ("user", "Q1"),
+            ("assistant", "A1"),
+            ("user", "Q2"),
+            ("assistant", "A2 new"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_failed_regeneration_restores_the_original_history(self):
+        from backend.utils.exceptions import LLMUnavailableError
+
+        service, memory, _ = self._service_with_answers(
+            [
+                "A1",
+                "A2",
+                LLMUnavailableError("The language model is unavailable."),
+            ]
+        )
+
+        await service.chat("Q1", "session1", use_rag=False, turn_id="turn-1")
+        await service.chat("Q2", "session1", use_rag=False, turn_id="turn-2")
+        before = await memory.get_conversation_history("session1")
+
+        with pytest.raises(LLMUnavailableError, match="unavailable"):
+            await service.chat("Q1", "session1", use_rag=False, turn_id="turn-1")
+
+        assert await memory.get_conversation_history("session1") == before
+
+    @pytest.mark.asyncio
+    async def test_concurrent_turns_in_one_session_are_serialized(self):
+        from backend.services.chat_service import ChatService
+        from backend.services.memory_service import MemoryService
+        from backend.services.prompt_service import PromptService
+
+        class Retrieval:
+            embeddings_are_real = True
+
+        class GatedLLM:
+            settings = SimpleNamespace(ollama_model="fake")
+
+            def __init__(self):
+                self.first_started = asyncio.Event()
+                self.release_first = asyncio.Event()
+                self.prompts = []
+
+            async def generate_chat_response(self, prompt):
+                self.prompts.append(prompt)
+                if len(self.prompts) == 1:
+                    self.first_started.set()
+                    await self.release_first.wait()
+                    return "A1"
+                return "A2"
+
+        memory = MemoryService()
+        llm = GatedLLM()
+        service = ChatService(
+            retrieval_service=Retrieval(),
+            memory_service=memory,
+            prompt_service=PromptService(),
+            llm_service=llm,
+        )
+        service.is_initialized = True
+
+        first = asyncio.create_task(
+            service.chat("Q1", "session1", use_rag=False, turn_id="turn-1")
+        )
+        await llm.first_started.wait()
+        second = asyncio.create_task(
+            service.chat("Q2", "session1", use_rag=False, turn_id="turn-2")
+        )
+        await asyncio.sleep(0)
+        assert len(llm.prompts) == 1
+
+        llm.release_first.set()
+        await asyncio.gather(first, second)
+
+        assert "A1" in llm.prompts[1]
+        history = await memory.get_conversation_history("session1")
+        assert [(item["role"], item["content"]) for item in history] == [
+            ("user", "Q1"),
+            ("assistant", "A1"),
+            ("user", "Q2"),
+            ("assistant", "A2"),
+        ]
+
     def test_chat_without_indexed_documents_is_not_grounded(self, client, admin_headers):
         response = client.post(
             "/api/chat",
@@ -268,8 +498,12 @@ class TestChatGrounding:
                 return SimpleNamespace(results=[hit], combined_context="ctx")
 
         class Memory:
-            async def add_user_message(self, *_): ...
-            async def add_assistant_message(self, *_): ...
+            @asynccontextmanager
+            async def session_transaction(self, *_):
+                yield SimpleNamespace(messages=[])
+
+            async def add_user_message(self, *_, **__): ...
+            async def add_assistant_message(self, *_, **__): ...
             async def get_context_messages(self, *_):
                 return []
 
@@ -291,7 +525,9 @@ class TestChatGrounding:
         )
         service.is_initialized = True
 
-        response = await service.chat("What is the invoice total?")
+        response = await service.chat(
+            "What is the invoice total?", turn_id="new-turn", use_rag=True
+        )
 
         assert response.usage["grounded"] is False, (
             "generation failed, so no answer was built from the passages"
@@ -314,8 +550,12 @@ class TestChatGrounding:
                 return SimpleNamespace(results=[], combined_context="")
 
         class Memory:
-            async def add_user_message(self, *_): ...
-            async def add_assistant_message(self, *_): ...
+            @asynccontextmanager
+            async def session_transaction(self, *_):
+                yield SimpleNamespace(messages=[])
+
+            async def add_user_message(self, *_, **__): ...
+            async def add_assistant_message(self, *_, **__): ...
             async def get_context_messages(self, *_):
                 return []
 

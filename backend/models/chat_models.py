@@ -32,6 +32,15 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(
         None, description="Session ID for conversation continuity"
     )
+    turn_id: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=128,
+        description=(
+            "Stable client ID for replacing an existing turn and later history "
+            "during regeneration"
+        ),
+    )
     use_rag: bool = Field(True, description="Whether to use RAG for context")
     rag_top_k: int = Field(5, description="Number of chunks to retrieve", ge=1, le=20)
     document_id: Optional[str] = Field(None, description="Filter to specific document")
@@ -42,6 +51,7 @@ class ChatRequest(BaseModel):
             "example": {
                 "message": "Summarize the main points of this document",
                 "session_id": "session-123",
+                "turn_id": "turn-123",
                 "use_rag": True,
                 "rag_top_k": 5,
             }

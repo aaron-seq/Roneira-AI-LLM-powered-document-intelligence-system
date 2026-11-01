@@ -245,6 +245,44 @@ class TestMemoryService:
         assert history[1]["role"] == "assistant"
 
     @pytest.mark.asyncio
+    async def test_replacing_a_turn_discards_it_and_later_turns(self):
+        service = MemoryService()
+
+        await service.add_user_message("session1", "Q1", turn_id="turn-1")
+        await service.add_assistant_message("session1", "A1", turn_id="turn-1")
+        await service.add_user_message("session1", "Q2", turn_id="turn-2")
+        await service.add_assistant_message("session1", "A2", turn_id="turn-2")
+
+        await service.add_user_message("session1", "Q1", turn_id="turn-1")
+        await service.add_assistant_message(
+            "session1", "A1 replacement", turn_id="turn-1"
+        )
+
+        history = await service.get_conversation_history("session1")
+        assert [(item["role"], item["content"]) for item in history] == [
+            ("user", "Q1"),
+            ("assistant", "A1 replacement"),
+        ]
+        assert all(item["metadata"]["turn_id"] == "turn-1" for item in history)
+
+    @pytest.mark.asyncio
+    async def test_unknown_turn_id_appends_without_truncating_history(self):
+        service = MemoryService()
+
+        await service.add_user_message("session1", "Q1")
+        await service.add_assistant_message("session1", "A1")
+        await service.add_user_message("session1", "Q2", turn_id="new-turn")
+        await service.add_assistant_message("session1", "A2", turn_id="new-turn")
+
+        history = await service.get_conversation_history("session1")
+        assert [(item["role"], item["content"]) for item in history] == [
+            ("user", "Q1"),
+            ("assistant", "A1"),
+            ("user", "Q2"),
+            ("assistant", "A2"),
+        ]
+
+    @pytest.mark.asyncio
     async def test_get_context_messages(self):
         """Test getting messages formatted for context."""
         service = MemoryService()

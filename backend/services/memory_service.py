@@ -5,12 +5,14 @@ Manages conversation memory and context for multi-turn
 chat interactions in RAG applications.
 """
 
+import asyncio
 import logging
 import uuid
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,7 @@ class ConversationSession:
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     def add_message(
         self, role: str, content: str, metadata: Optional[Dict] = None
@@ -204,18 +207,52 @@ class MemoryService:
             return self.store.get_or_create(session_id)
         return self.store.get(session_id)
 
-    async def add_user_message(
-        self, session_id: str, content: str, metadata: Optional[Dict[str, Any]] = None
-    ) -> Message:
-        """Add a user message to session."""
+    @asynccontextmanager
+    async def session_transaction(
+        self, session_id: str
+    ) -> AsyncIterator[ConversationSession]:
+        """Serialize a chat turn and restore its history if processing fails."""
         session = self.store.get_or_create(session_id)
+        async with session.lock:
+            original_messages = list(session.messages)
+            original_updated_at = session.updated_at
+            try:
+                yield session
+            except BaseException:
+                session.messages[:] = original_messages
+                session.updated_at = original_updated_at
+                raise
+
+    async def add_user_message(
+        self,
+        session_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        *,
+        turn_id: Optional[str] = None,
+    ) -> Message:
+        """Append a user message or replace its identified turn and later turns."""
+        session = self.store.get_or_create(session_id)
+        if turn_id is not None:
+            for index, message in enumerate(session.messages):
+                if message.role == "user" and message.metadata.get("turn_id") == turn_id:
+                    del session.messages[index:]
+                    break
+            metadata = {**(metadata or {}), "turn_id": turn_id}
         return session.add_message("user", content, metadata)
 
     async def add_assistant_message(
-        self, session_id: str, content: str, metadata: Optional[Dict[str, Any]] = None
+        self,
+        session_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        *,
+        turn_id: Optional[str] = None,
     ) -> Message:
         """Add an assistant message to session."""
         session = self.store.get_or_create(session_id)
+        if turn_id is not None:
+            metadata = {**(metadata or {}), "turn_id": turn_id}
         return session.add_message("assistant", content, metadata)
 
     async def add_system_message(self, session_id: str, content: str) -> Message:
@@ -252,19 +289,25 @@ class MemoryService:
         if not session:
             return []
 
-        return [m.to_dict() for m in session.messages]
+        async with session.lock:
+            return [m.to_dict() for m in session.messages]
 
     async def clear_session(self, session_id: str) -> bool:
         """Clear all messages in a session."""
         session = self.store.get(session_id)
         if session:
-            session.clear()
-            return True
+            async with session.lock:
+                session.clear()
+                return True
         return False
 
     async def delete_session(self, session_id: str) -> bool:
         """Delete a session entirely."""
-        return self.store.delete(session_id)
+        session = self.store.get(session_id)
+        if not session:
+            return False
+        async with session.lock:
+            return self.store.delete(session_id)
 
     async def get_session_summary(self, session_id: str) -> Dict[str, Any]:
         """Get summary of a session."""
