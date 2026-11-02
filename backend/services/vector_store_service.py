@@ -62,6 +62,41 @@ class VectorDocument:
     metadata: Dict[str, Any]
 
 
+def _matches_filter(metadata: Dict[str, Any], filter_dict: Dict[str, Any]) -> bool:
+    """Evaluate the subset of Chroma metadata filters used by retrieval."""
+    if not filter_dict:
+        return True
+
+    if "$and" in filter_dict:
+        return all(_matches_filter(metadata, item) for item in filter_dict["$and"])
+    if "$or" in filter_dict:
+        return any(_matches_filter(metadata, item) for item in filter_dict["$or"])
+
+    for key, expected in filter_dict.items():
+        actual = metadata.get(key)
+        if isinstance(expected, dict):
+            for operator, operand in expected.items():
+                if operator == "$in" and actual not in operand:
+                    return False
+                if operator == "$nin" and actual in operand:
+                    return False
+                if operator == "$eq" and actual != operand:
+                    return False
+                if operator == "$ne" and actual == operand:
+                    return False
+                if operator == "$gt" and not (actual is not None and actual > operand):
+                    return False
+                if operator == "$gte" and not (actual is not None and actual >= operand):
+                    return False
+                if operator == "$lt" and not (actual is not None and actual < operand):
+                    return False
+                if operator == "$lte" and not (actual is not None and actual <= operand):
+                    return False
+        elif actual != expected:
+            return False
+    return True
+
+
 class InMemoryVectorStore:
     """
     Simple in-memory vector store for development.
@@ -94,11 +129,11 @@ class InMemoryVectorStore:
         for chunk_id, embedding in self.embeddings.items():
             doc = self.documents[chunk_id]
 
-            # Apply filter if provided
-            if filter_dict:
-                match = all(doc.metadata.get(k) == v for k, v in filter_dict.items())
-                if not match:
-                    continue
+            # Apply the same metadata filter operators supported by Chroma.
+            if filter_dict and not _matches_filter(
+                {**doc.metadata, "document_id": doc.document_id}, filter_dict
+            ):
+                continue
 
             # Cosine similarity
             doc_vec = np.array(embedding)
