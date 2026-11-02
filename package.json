@@ -9,7 +9,7 @@
     "lint": "eslint src tests/frontend --ext ts,tsx,mjs",
     "lint:fix": "eslint src tests/frontend --ext ts,tsx,mjs --fix",
     "type-check": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/frontend/dashboard-indicators.test.mjs"
+    "test": "node --experimental-strip-types --test tests/frontend/*.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.11.1",
