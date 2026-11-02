@@ -444,18 +444,37 @@ class RetrievalService:
 
         query_embedding = await self.embedding_service.embed_text(query)
 
-        # Always over-fetch. Post-filtering by score and ownership would
-        # otherwise return fewer than top_k, and hybrid ranking needs a pool of
-        # candidates to reorder rather than the final list.
+        # Scope the vector query before its candidate limit. Filtering a global
+        # top-k result afterwards can let unrelated documents consume the
+        # entire pool before authorized chunks are considered.
+        allowed = set(document_ids) if document_ids is not None else None
+        if allowed is not None and not allowed:
+            return RetrievalContext(
+                query=query,
+                results=[],
+                combined_context="",
+                total_chunks=0,
+                avg_score=0.0,
+            )
+
+        scope_filter: Optional[Dict[str, Any]] = None
+        if allowed is not None:
+            scope_filter = {"document_id": {"$in": list(allowed)}}
+        elif owner_id is not None:
+            scope_filter = {"owner_id": owner_id}
+
+        effective_filter = _merge_metadata_filters(filter_dict, scope_filter)
+
+        # Always over-fetch within the authorized scope. Hybrid ranking needs
+        # a pool of candidates to reorder rather than the final list.
         fetch_k = max(top_k * CANDIDATE_MULTIPLIER, top_k)
 
         results = await self.vector_store.search(
             query_embedding=query_embedding.embedding,
             top_k=fetch_k,
-            filter_dict=filter_dict,
+            filter_dict=effective_filter,
         )
 
-        allowed = set(document_ids) if document_ids is not None else None
         candidates: List[SearchResult] = []
         for result in results:
             if result.score < threshold:
@@ -661,6 +680,19 @@ class RetrievalService:
 
 #: How many candidates to pull per requested result before ranking.
 CANDIDATE_MULTIPLIER = 4
+
+
+def _merge_metadata_filters(
+    requested: Optional[Dict[str, Any]],
+    scope: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Combine caller filters with the authorization scope using AND."""
+    if requested is None:
+        return scope
+    if scope is None:
+        return requested
+    return {"$and": [requested, scope]}
+
 
 #: BM25 parameters. Standard defaults; the corpus here is a handful of chunks,
 #: so tuning them is not where the wins are.
