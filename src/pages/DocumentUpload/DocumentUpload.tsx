@@ -17,6 +17,7 @@ import {
 import { UploadFile as UploadFileIcon, CheckCircle, Error as ErrorIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { apiClient } from '../../api/client';
 import toast from 'react-hot-toast';
+import { countUploadCandidates, getUploadCandidates, isUploadCandidate, type UploadStatus } from './uploadState';
 
 // Define a type for the processing status message from the backend
 interface ProcessingStatus {
@@ -30,7 +31,7 @@ interface ProcessingStatus {
 interface FileWithStatus {
     file: File; // The actual File object
     id?: string; // document_id after upload
-    uploadStatus: 'idle' | 'uploading' | 'uploaded' | 'error';
+    uploadStatus: UploadStatus;
     uploadProgress: number;
 }
 
@@ -107,10 +108,10 @@ const DocumentUpload = () => {
     };
 
     const handleUpload = async () => {
-        if (files.length === 0) return;
+        const filesToUpload = getUploadCandidates(files);
+        if (filesToUpload.length === 0) return;
 
         setIsUploading(true);
-        const filesToUpload = files.filter(f => f.uploadStatus === 'idle' || f.uploadStatus === 'error');
 
         await Promise.all(filesToUpload.map(async (fileWrapper) => {
             // Find current index to update state
@@ -167,6 +168,7 @@ const DocumentUpload = () => {
         const status = processingStatuses[f.id!];
         return status?.status === 'completed';
     });
+    const uploadCandidateCount = countUploadCandidates(files);
 
     return (
         <Box>
@@ -245,7 +247,7 @@ const DocumentUpload = () => {
                                             </Box>
                                         }
                                     />
-                                    {!isUploading && fileWrapper.uploadStatus === 'idle' && (
+                                    {!isUploading && isUploadCandidate(fileWrapper.uploadStatus) && (
                                         <IconButton onClick={() => removeFile(index)}>
                                             <DeleteIcon />
                                         </IconButton>
@@ -265,10 +267,10 @@ const DocumentUpload = () => {
                         <Button 
                             variant="contained" 
                             onClick={handleUpload} 
-                            disabled={isUploading || files.filter(f => f.uploadStatus === 'idle').length === 0}
+                            disabled={isUploading || uploadCandidateCount === 0}
                             startIcon={isUploading ? <CircularProgress size={20} /> : null}
                         >
-                            {isUploading ? 'Processing...' : `Upload ${files.filter(f => f.uploadStatus === 'idle').length} Files`}
+                            {isUploading ? 'Processing...' : `Upload ${uploadCandidateCount} Files`}
                         </Button>
                      </Box>
                 </Paper>
